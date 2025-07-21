@@ -37,6 +37,7 @@ class LazyBatchSpanProcessor:
         self._started = False
 
     def _ensure_started(self):
+        # Double check
         if not self._started:
             with self._lock:
                 if not self._started:
@@ -48,6 +49,7 @@ class LazyBatchSpanProcessor:
             self._inner.on_start(span, parent_context)
 
     def on_end(self, span: ReadableSpan) -> None:
+        # 跳过未采样的 span
         if not span.context.trace_flags.sampled:
             return
         self._ensure_started()
