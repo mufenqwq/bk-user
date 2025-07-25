@@ -27,7 +27,7 @@ from bkuser.common.scrub import scrub_data
         # Case-insensitive
         ({"Password": "bar"}, {"Password": "******"}),
         # Sensitive data at top level
-        ({"name": "foo", "bk_ticket": "bar"}, {"name": "foo", "bk_ticket": "******"}),
+        ({"name": "foo", "bk_token": "bar"}, {"name": "foo", "bk_token": "******"}),
         # Sensitive data at inside level
         (
             {"nested": {"l2": {"name": "foo", "bk_token": "bar"}}, "l1": 0},
