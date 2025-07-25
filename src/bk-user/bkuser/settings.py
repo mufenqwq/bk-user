@@ -579,7 +579,7 @@ def build_logging_config(log_level: str, to_console: bool, file_directory: Optio
             "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
             "level": log_level,
             "formatter": formatter,
-            "filters": ["request_id_filter"],
+            "filters": ["request_id_filter", "sensitive_info_filter"],
             "filename": str(log_path / filename),
             # Set max file size to 100MB
             "maxBytes": 100 * 1024 * 1024,
@@ -592,7 +592,7 @@ def build_logging_config(log_level: str, to_console: bool, file_directory: Optio
             "level": log_level,
             "class": "logging.StreamHandler",
             "formatter": "verbose",
-            "filters": ["request_id_filter"],
+            "filters": ["request_id_filter", "sensitive_info_filter"],
         },
     }
     # 生成指定 Logger 对应的 Handlers
@@ -617,6 +617,7 @@ def build_logging_config(log_level: str, to_console: bool, file_directory: Optio
         "disable_existing_loggers": False,
         "filters": {
             "request_id_filter": {"()": "bkuser.common.log.RequestIDFilter"},
+            "sensitive_info_filter": {"()": "bkuser.common.log.SensitiveInfoFilter"},
         },
         "formatters": {
             "verbose": {

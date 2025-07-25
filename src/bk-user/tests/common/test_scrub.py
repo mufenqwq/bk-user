@@ -14,34 +14,26 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-import logging
-
-from bkuser.common.local import local
+import pytest
 from bkuser.common.scrub import scrub_data
 
 
-class RequestIDFilter(logging.Filter):
-    """
-    request id log filter
-    日志记录中增加 request id
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = local.request_id
-        return True
-
-
-class SensitiveInfoFilter(logging.Filter):
-    """
-    敏感信息脱敏日志过滤器
-    在日志记录中对参数进行脱敏处理，防止敏感数据泄露
-
-    注意：当前仅支持对 dict 类型的数据进行脱敏处理，其他类型将原样返回。
-    """
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.args:
-            new_args = [scrub_data(arg) for arg in record.args]  # type: ignore[arg-type]
-            record.args = tuple(new_args)
-
-        return True
+@pytest.mark.parametrize(
+    ("input", "output"),
+    [
+        # Data remain intact
+        ({"obj": {"value": 3}}, {"obj": {"value": 3}}),
+        ("obj=foobar", "obj=foobar"),
+        # Case-insensitive
+        ({"Password": "bar"}, {"Password": "******"}),
+        # Sensitive data at top level
+        ({"name": "foo", "bk_ticket": "bar"}, {"name": "foo", "bk_ticket": "******"}),
+        # Sensitive data at inside level
+        (
+            {"nested": {"l2": {"name": "foo", "bk_token": "bar"}}, "l1": 0},
+            {"nested": {"l2": {"name": "foo", "bk_token": "******"}}, "l1": 0},
+        ),
+    ],
+)
+def test_scrub_data(input, output):
+    assert scrub_data(input) == output
