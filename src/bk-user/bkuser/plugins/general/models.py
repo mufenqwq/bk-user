@@ -14,8 +14,9 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-
-from pydantic import BaseModel, Field
+from django.conf import settings
+from django.utils.translation import gettext_lazy as _
+from pydantic import BaseModel, Field, model_validator
 
 from bkuser.plugins.general.constants import (
     API_URL_PATH_REGEX,
@@ -69,6 +70,8 @@ class AuthConfig(BaseModel):
     # basic auth 配置
     username: str | None = None
     password: str | None = None
+    # apigw 配置
+    tenant_id: str | None = None
 
 
 class GeneralDataSourcePluginConfig(BasePluginConfig):
@@ -83,3 +86,14 @@ class GeneralDataSourcePluginConfig(BasePluginConfig):
     server_config: ServerConfig
     # 认证配置
     auth_config: AuthConfig
+
+    @model_validator(mode="after")
+    def validate_apigw_url(self) -> "GeneralDataSourcePluginConfig":
+        if self.auth_config.method == AuthMethod.APIGW:
+            url = self.server_config.server_base_url
+            # 提取 BK_API_URL_TMPL 前缀
+            tmpl = settings.BK_API_URL_TMPL
+            prefix = tmpl.split("{")[0]
+            if not url.startswith(prefix):
+                raise ValueError(_(f"API 网关认证时，服务地址必须以 {prefix} 开头"))
+        return self
