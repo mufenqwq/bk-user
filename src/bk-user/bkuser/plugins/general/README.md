@@ -16,7 +16,7 @@ curl -H 'Authorization: Bearer ${BearerToken}' http://bk.example.com/apis/v1/use
 curl -H "Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=" http://bk.example.com/apis/v1/departments?page=1&page_size=100
 
 # apigw
-curl -H 'X-Bkapi-Authorization: {"bk_app_code":"bk_app_code_111","bk_app_secret":""}' \
+curl -H 'X-Bkapi-Authorization: {"bk_app_code":"bkuser","bk_app_secret":"dXNlcm5hbWU6cGFzc3dvcmQ="}' \
      -H 'X-Bk-Tenant-Id: your_tenant_id' \
      http://bk.example.com/apis/v1/users?page=1&page_size=100
 ```
