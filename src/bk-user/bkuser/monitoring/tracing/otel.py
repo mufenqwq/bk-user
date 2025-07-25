@@ -15,13 +15,13 @@
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
 import threading
-from typing import Optional
 
 from django.conf import settings
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk._shared_internal import BatchProcessor
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.sdk.trace.sampling import _KNOWN_SAMPLERS
 
@@ -56,37 +56,29 @@ class LazyBatchSpanProcessor(BatchSpanProcessor):
             if export_timeout_millis is not None
             else BatchSpanProcessor._default_export_timeout_millis()
         )
-        self._started = False
+        self._batch_processor_initialized = False
+        self._inner_batch_processor: BatchProcessor | None = None
         self._lock = threading.Lock()
         BatchSpanProcessor._validate_arguments(
             self._max_queue_size, self._schedule_delay_millis, self._max_export_batch_size
         )
 
-    def _ensure_started(self):
+    @property  # type: ignore[override]
+    def _batch_processor(self) -> BatchProcessor:
         # Double check
-        if not self._started:
+        if not self._batch_processor_initialized:
             with self._lock:
-                if not self._started:
-                    super().__init__(
-                        self._span_exporter,
-                        max_queue_size=self._max_queue_size,
+                if not self._batch_processor_initialized:
+                    self._inner_batch_processor = BatchProcessor(
+                        exporter=self._span_exporter,
                         schedule_delay_millis=self._schedule_delay_millis,
                         max_export_batch_size=self._max_export_batch_size,
                         export_timeout_millis=self._export_timeout_millis,
+                        max_queue_size=self._max_queue_size,
+                        exporting="Span",
                     )
-                    self._started = True
-
-    def on_end(self, span: ReadableSpan) -> None:
-        self._ensure_started()
-        super().on_end(span)
-
-    def shutdown(self) -> None:
-        self._ensure_started()
-        super().shutdown()
-
-    def force_flush(self, timeout_millis: Optional[int] = None) -> bool:
-        self._ensure_started()
-        return super().force_flush(timeout_millis)
+                    self._batch_processor_initialized = True
+        return self._inner_batch_processor  # type: ignore[return-value]
 
 
 def setup_trace_config():
