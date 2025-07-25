@@ -41,7 +41,5 @@ class SensitiveInfoFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if record.args:
-            new_args = [scrub_data(arg) for arg in record.args]  # type: ignore[arg-type]
-            record.args = tuple(new_args)
-
+            record.args = tuple(scrub_data(arg) for arg in record.args)  # type: ignore[arg-type]
         return True
