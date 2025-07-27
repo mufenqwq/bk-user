@@ -66,7 +66,7 @@ class AuthMethod(StrStructuredEnum):
 
     BEARER_TOKEN = EnumField("bearer_token", label="BearerToken")
     BASIC_AUTH = EnumField("basic_auth", label="BasicAuth")
-    APIGW = EnumField("apigw", label="API 网关认证")
+    APIGW = EnumField("apigw", label=_("API 网关认证"))
 
 
 class PageSizeEnum(IntStructuredEnum):
