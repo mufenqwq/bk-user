@@ -14,9 +14,9 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-DEFAULT_SCRUBBED_FIELDS = (
+DEFAULT_SCRUBBED_FIELDS = [
     "password",
     "secret",
     "passwd",
@@ -29,20 +29,27 @@ DEFAULT_SCRUBBED_FIELDS = (
     "bk_app_secret",
     "cookie",
     "bearer",
-)
+]
 
 
-def scrub_data(data: Dict[str, Any]) -> Dict[str, Any]:
+def scrub_data(data: Dict[str, Any], custom_fields: List[str] | None = None) -> Dict[str, Any]:
     """Scrub the data, mask all sensitive data fields.
 
+    :param data: The data dictionary to scrub.
+    :param custom_fields: Additional field names to scrub along with default fields.
     :return: A new dict, with sensitive data masked as "******".
     """
     if not isinstance(data, dict):
         return data
 
+    scrubbed_fields = DEFAULT_SCRUBBED_FIELDS
+
+    if custom_fields:
+        scrubbed_fields.extend(custom_fields)
+
     def _key_is_sensitive(key: str) -> bool:
         """Check if given key is sensitive."""
-        return any(field in key.lower() for field in DEFAULT_SCRUBBED_FIELDS)
+        return any(field in key.lower() for field in scrubbed_fields)
 
     result: Dict[str, Any] = {}
 
