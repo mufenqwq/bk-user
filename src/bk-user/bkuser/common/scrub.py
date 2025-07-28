@@ -35,8 +35,8 @@ DEFAULT_SCRUBBED_FIELDS = [
 def scrub_data(data: Dict[str, Any], custom_fields: List[str] | None = None) -> Dict[str, Any]:
     """Scrub the data, mask all sensitive data fields.
 
-    :param data: The data dictionary to scrub.
-    :param custom_fields: Additional field names to scrub along with default fields.
+    :param data: The data dict to scrub.
+    :param custom_fields: Additional fields to scrub along with default fields.
     :return: A new dict, with sensitive data masked as "******".
     """
     if not isinstance(data, dict):
