@@ -35,7 +35,6 @@ from bkuser.common.constants import SENSITIVE_MASK
 from bkuser.common.serializers import StringArrayField
 from bkuser.plugins.base import get_default_plugin_cfg, get_plugin_cfg_cls, is_plugin_exists
 from bkuser.plugins.constants import DataSourcePluginEnum
-from bkuser.plugins.general.constants import AuthMethod
 from bkuser.plugins.local.models import PasswordRuleConfig
 from bkuser.plugins.models import BasePluginConfig
 from bkuser.utils import dictx
@@ -140,12 +139,6 @@ class DataSourceCreateInputSLZ(serializers.Serializer):
         if not is_plugin_exists(plugin_id):
             raise ValidationError(_("数据源插件 {} 不存在").format(plugin_id))
 
-        # 通用数据源插件 APIGW 认证场景 需要自动注入 tenant_id
-        if plugin_id == DataSourcePluginEnum.GENERAL:
-            auth_config = attrs["plugin_config"]["auth_config"]
-            if auth_config.get("method") == AuthMethod.APIGW:
-                attrs["plugin_config"]["auth_config"]["tenant_id"] = self.context["tenant_id"]
-
         PluginConfigCls = get_plugin_cfg_cls(plugin_id)  # noqa: N806
         try:
             attrs["plugin_config"] = PluginConfigCls(**attrs["plugin_config"])
@@ -194,12 +187,6 @@ class DataSourceUpdateInputSLZ(serializers.Serializer):
         for info in self.context["exists_sensitive_infos"]:
             if dictx.get_items(plugin_config, info.key) == SENSITIVE_MASK:
                 dictx.set_items(plugin_config, info.key, info.value)
-
-        # 通用数据源插件 APIGW 认证场景 需要自动注入 tenant_id
-        if self.context["plugin_id"] == DataSourcePluginEnum.GENERAL:
-            auth_config = plugin_config["auth_config"]
-            if auth_config.get("method") == AuthMethod.APIGW:
-                plugin_config["auth_config"]["tenant_id"] = self.context["tenant_id"]
 
         try:
             return PluginConfigCls(**plugin_config)
@@ -272,12 +259,6 @@ class DataSourceTestConnectionInputSLZ(serializers.Serializer):
             for info in DataSourceSensitiveInfo.objects.filter(data_source_id=data_source_id):
                 if dictx.get_items(plugin_config, info.key) == SENSITIVE_MASK:
                     dictx.set_items(plugin_config, info.key, info.value)
-
-        # 通用数据源插件 APIGW 认证场景 需要自动注入 tenant_id
-        if plugin_id == DataSourcePluginEnum.GENERAL:
-            auth_config = plugin_config["auth_config"]
-            if auth_config.get("method") == AuthMethod.APIGW:
-                plugin_config["auth_config"]["tenant_id"] = self.context["tenant_id"]
 
         PluginConfigCls = get_plugin_cfg_cls(plugin_id)  # noqa: N806
         try:

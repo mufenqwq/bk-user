@@ -14,6 +14,9 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
+import re
+from urllib.parse import urljoin
+
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from pydantic import BaseModel, Field, model_validator
@@ -44,7 +47,7 @@ class ServerConfig(BaseModel):
     """数据服务相关配置"""
 
     # 服务地址
-    server_base_url: str = Field(pattern=BASE_URL_REGEX)
+    server_base_url: str
     # 用户数据 API 路径
     user_api_path: str = Field(pattern=API_URL_PATH_REGEX)
     # 用户数据 API 请求参数
@@ -60,6 +63,15 @@ class ServerConfig(BaseModel):
     # 请求失败重试次数
     retries: int = Field(ge=MIN_RETRIES, le=MAX_RETRIES, default=DEFAULT_RETRIES)
 
+    @model_validator(mode="after")
+    def validate_server_base_url(self) -> "ServerConfig":
+        if self.server_base_url is None:
+            return self
+
+        if not re.match(BASE_URL_REGEX, self.server_base_url):
+            raise ValueError(_("服务地址格式不正确"))
+        return self
+
 
 class AuthConfig(BaseModel):
     """认证配置"""
@@ -70,7 +82,10 @@ class AuthConfig(BaseModel):
     # basic auth 配置
     username: str | None = None
     password: str | None = None
-    # apigw 配置
+    # 蓝鲸网关配置
+    # server_base_url = urljoin(settings.BK_API_URL_TMPL.format(api_name=apigw_name), apigw_stage)
+    api_name: str | None = None
+    api_stage: str | None = None
     tenant_id: str | None = None
 
 
@@ -88,12 +103,27 @@ class GeneralDataSourcePluginConfig(BasePluginConfig):
     auth_config: AuthConfig
 
     @model_validator(mode="after")
-    def validate_apigw_url(self) -> "GeneralDataSourcePluginConfig":
-        if self.auth_config.method == AuthMethod.APIGW:
-            url = self.server_config.server_base_url
-            # 提取 BK_API_URL_TMPL 前缀
-            tmpl = settings.BK_API_URL_TMPL
-            prefix = tmpl.split("{")[0]
-            if not url.startswith(prefix):
-                raise ValueError(_(f"API 网关认证时，服务地址必须以 {prefix} 开头"))
+    def validate_configs(self) -> "GeneralDataSourcePluginConfig":
+        auth_method = self.auth_config.method
+
+        if auth_method == AuthMethod.BEARER_TOKEN:
+            if not self.auth_config.bearer_token:
+                raise ValueError(_("当认证方式为 BearerToken 时，token 必须提供"))
+        elif auth_method == AuthMethod.BASIC_AUTH:
+            if not self.auth_config.username or not self.auth_config.password:
+                raise ValueError(_("当认证方式为 BasicAuth 时，用户名和密码必须提供"))
+        elif auth_method == AuthMethod.BK_APIGW:
+            if not self.auth_config.api_name or not self.auth_config.api_stage:
+                raise ValueError(_("蓝鲸网关认证时，api_name 和 api_stage 不能为空"))
+
+            # 设置 server_base_url
+            self.server_config.server_base_url = urljoin(
+                settings.BK_API_URL_TMPL.format(api_name=self.auth_config.api_name), self.auth_config.api_stage
+            )
+            return self
+
+        # 非蓝鲸网关认证方式，校验 server_base_url 格式
+        if not re.match(BASE_URL_REGEX, self.server_config.server_base_url):
+            raise ValueError(_("服务地址格式不正确"))
+
         return self

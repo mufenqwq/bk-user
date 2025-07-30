@@ -55,8 +55,8 @@ def gen_headers(cfg: AuthConfig) -> Dict[str, str]:
         # BasicAuth
         credentials = base64.b64encode(f"{cfg.username}:{cfg.password}".encode("utf-8")).decode("utf-8")
         headers["Authorization"] = f"Basic {credentials}"
-    elif cfg.method == AuthMethod.APIGW:
-        # API 网关认证
+    elif cfg.method == AuthMethod.BK_APIGW:
+        # 蓝鲸网关认证
         headers["X-Bkapi-Authorization"] = json.dumps(
             {
                 "bk_app_code": settings.BK_APP_CODE,
