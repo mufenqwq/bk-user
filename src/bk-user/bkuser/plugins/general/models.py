@@ -108,7 +108,7 @@ class GeneralDataSourcePluginConfig(BasePluginConfig):
 
         if auth_method == AuthMethod.BK_APIGW:
             if not self.auth_config.gateway_name or not self.auth_config.gateway_stage:
-                raise ValueError(_("蓝鲸网关认证时，api_name 和 api_stage 不能为空"))
+                raise ValueError(_("蓝鲸网关认证时，gateway_name 和 gateway_stage 不能为空"))
 
             # 设置 server_base_url
             self.server_config.server_base_url = urljoin(
