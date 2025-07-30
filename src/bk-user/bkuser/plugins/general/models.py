@@ -65,7 +65,7 @@ class ServerConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_server_base_url(self) -> "ServerConfig":
-        if self.server_base_url is None:
+        if self.server_base_url == "":
             return self
 
         if not re.match(BASE_URL_REGEX, self.server_base_url):
