@@ -15,7 +15,6 @@
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
 import re
-from urllib.parse import urljoin
 
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
@@ -34,6 +33,7 @@ from bkuser.plugins.general.constants import (
     PageSizeEnum,
 )
 from bkuser.plugins.models import BasePluginConfig
+from bkuser.utils.url import urljoin
 
 
 class QueryParam(BaseModel):
@@ -83,9 +83,9 @@ class AuthConfig(BaseModel):
     username: str | None = None
     password: str | None = None
     # 蓝鲸网关配置
-    # server_base_url = urljoin(settings.BK_API_URL_TMPL.format(api_name=apigw_name), apigw_stage)
-    api_name: str | None = None
-    api_stage: str | None = None
+    # server_base_url = urljoin(settings.BK_API_URL_TMPL.format(api_name=gateway_name), gateway_stage)
+    gateway_name: str | None = None
+    gateway_stage: str | None = None
     tenant_id: str | None = None
 
 
@@ -106,19 +106,13 @@ class GeneralDataSourcePluginConfig(BasePluginConfig):
     def validate_configs(self) -> "GeneralDataSourcePluginConfig":
         auth_method = self.auth_config.method
 
-        if auth_method == AuthMethod.BEARER_TOKEN:
-            if not self.auth_config.bearer_token:
-                raise ValueError(_("当认证方式为 BearerToken 时，token 必须提供"))
-        elif auth_method == AuthMethod.BASIC_AUTH:
-            if not self.auth_config.username or not self.auth_config.password:
-                raise ValueError(_("当认证方式为 BasicAuth 时，用户名和密码必须提供"))
-        elif auth_method == AuthMethod.BK_APIGW:
-            if not self.auth_config.api_name or not self.auth_config.api_stage:
+        if auth_method == AuthMethod.BK_APIGW:
+            if not self.auth_config.gateway_name or not self.auth_config.gateway_stage:
                 raise ValueError(_("蓝鲸网关认证时，api_name 和 api_stage 不能为空"))
 
             # 设置 server_base_url
             self.server_config.server_base_url = urljoin(
-                settings.BK_API_URL_TMPL.format(api_name=self.auth_config.api_name), self.auth_config.api_stage
+                settings.BK_API_URL_TMPL.format(api_name=self.auth_config.gateway_name), self.auth_config.gateway_stage
             )
             return self
 
