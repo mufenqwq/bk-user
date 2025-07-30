@@ -141,7 +141,7 @@ class DataSourceCreateInputSLZ(serializers.Serializer):
             raise ValidationError(_("数据源插件 {} 不存在").format(plugin_id))
 
         # 通用数据源插件 BK_APIGW 认证场景需要校验 tenant_id
-        if self.context["plugin_id"] == DataSourcePluginEnum.GENERAL:
+        if plugin_id == DataSourcePluginEnum.GENERAL:
             auth_config = attrs["plugin_config"].get("auth_config", {})
             if (
                 auth_config.get("method") == AuthMethod.BK_APIGW
@@ -280,7 +280,7 @@ class DataSourceTestConnectionInputSLZ(serializers.Serializer):
                     dictx.set_items(plugin_config, info.key, info.value)
 
             # 通用数据源插件 BK_APIGW 认证场景需要校验 tenant_id
-            if self.context["plugin_id"] == DataSourcePluginEnum.GENERAL:
+            if plugin_id == DataSourcePluginEnum.GENERAL:
                 auth_config = attrs["plugin_config"].get("auth_config", {})
                 if (
                     auth_config.get("method") == AuthMethod.BK_APIGW
