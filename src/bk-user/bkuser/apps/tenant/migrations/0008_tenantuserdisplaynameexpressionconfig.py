@@ -16,7 +16,7 @@ def forwards_func(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("tenant", "0008_tenantcommonvariable"),
+        ("tenant", "0007_tenantcommonvariable"),
     ]
 
     operations = [

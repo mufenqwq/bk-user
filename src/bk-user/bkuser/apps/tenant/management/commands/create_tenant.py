@@ -16,6 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 import re
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -93,7 +94,7 @@ class Command(BaseCommand):
     @staticmethod
     def _init_builtin_manager(tenant: Tenant, data_source: DataSource, password: str):
         """初始化内建管理员"""
-        admin_username = "admin"
+        admin_username = settings.INITIAL_ADMIN_USERNAME
         # 创建内建管理员
         data_source_user = DataSourceUser.objects.create(
             data_source=data_source,
@@ -125,8 +126,8 @@ class Command(BaseCommand):
         self._check_tenant(tenant_id)
         self._check_password(password)
 
-        # FIXME (nan): 目前有 GUI / Django CMD / Django Migrate 三种方式创建租户，后续需要统一复用
-        #  Note: 需要注意每种方式的差异，比如 migrate 不会触发 post_save 信号、是否调用的是自定义 queryset / manager、
+        # FIXME (nan): 目前有 GUI / Django CMD  两种方式创建租户，后续需要统一复用
+        #  Note: 需要注意每种方式的差异，是否调用的是自定义 queryset / manager、
         #  是否支持事务、是否审计、是否发送通知等等
         with transaction.atomic():
             # 创建租户

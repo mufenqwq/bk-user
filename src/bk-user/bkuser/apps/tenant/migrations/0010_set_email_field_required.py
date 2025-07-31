@@ -27,7 +27,7 @@ def forwards_func(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("tenant", "0010_virtualuserownerrelation_virtualuserapprelation"),
+        ("tenant", "0009_virtualuserownerrelation_virtualuserapprelation"),
     ]
 
     operations = [

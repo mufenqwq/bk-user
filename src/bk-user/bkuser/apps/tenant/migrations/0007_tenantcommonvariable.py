@@ -7,7 +7,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("tenant", "0007_alter_userbuiltinfield_options"),
+        ("tenant", "0005_alter_userbuiltinfield_options"),
     ]
 
     operations = [
