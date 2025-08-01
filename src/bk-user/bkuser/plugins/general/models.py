@@ -16,6 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 import re
 
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from pydantic import BaseModel, Field, model_validator
 
@@ -32,6 +33,7 @@ from bkuser.plugins.general.constants import (
     PageSizeEnum,
 )
 from bkuser.plugins.models import BasePluginConfig
+from bkuser.utils.url import urljoin
 
 
 class QueryParam(BaseModel):
@@ -90,6 +92,21 @@ class GeneralDataSourcePluginConfig(BasePluginConfig):
     server_config: ServerConfig
     # 认证配置
     auth_config: AuthConfig
+
+    @property
+    def server_base_url(self) -> str:
+        """获取服务基础 url
+
+        对于蓝鲸网关认证方式，将通过 gateway_name 和 gateway_stage 动态构建 server_base_url
+        对于其他认证方式，直接使用 server_config 的 server_base_url
+        """
+
+        if self.auth_config.method == AuthMethod.BK_APIGATEWAY:
+            return urljoin(
+                settings.BK_API_URL_TMPL.format(api_name=self.auth_config.gateway_name),
+                self.auth_config.gateway_stage,  # type: ignore
+            )
+        return self.server_config.server_base_url
 
     @model_validator(mode="after")
     def validate_configs(self) -> "GeneralDataSourcePluginConfig":
