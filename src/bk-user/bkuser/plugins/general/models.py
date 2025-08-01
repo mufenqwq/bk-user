@@ -16,7 +16,6 @@
 # to the current version of the project delivered to anyone in the future.
 import re
 
-from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from pydantic import BaseModel, Field, model_validator
 
@@ -33,7 +32,6 @@ from bkuser.plugins.general.constants import (
     PageSizeEnum,
 )
 from bkuser.plugins.models import BasePluginConfig
-from bkuser.utils.url import urljoin
 
 
 class QueryParam(BaseModel):
@@ -62,15 +60,6 @@ class ServerConfig(BaseModel):
     request_timeout: int = Field(ge=MIN_REQ_TIMEOUT, le=MAX_REQ_TIMEOUT, default=DEFAULT_REQ_TIMEOUT)
     # 请求失败重试次数
     retries: int = Field(ge=MIN_RETRIES, le=MAX_RETRIES, default=DEFAULT_RETRIES)
-
-    @model_validator(mode="after")
-    def validate_server_base_url(self) -> "ServerConfig":
-        if self.server_base_url == "":
-            return self
-
-        if not re.match(BASE_URL_REGEX, self.server_base_url):
-            raise ValueError(_("服务地址格式不正确"))
-        return self
 
 
 class AuthConfig(BaseModel):
@@ -106,18 +95,13 @@ class GeneralDataSourcePluginConfig(BasePluginConfig):
     def validate_configs(self) -> "GeneralDataSourcePluginConfig":
         auth_method = self.auth_config.method
 
-        if auth_method == AuthMethod.BK_APIGW:
+        if auth_method == AuthMethod.BK_APIGATEWAY:
             if not self.auth_config.gateway_name or not self.auth_config.gateway_stage:
                 raise ValueError(_("蓝鲸网关认证时，gateway_name 和 gateway_stage 不能为空"))
 
-            # 设置 server_base_url
-            self.server_config.server_base_url = urljoin(
-                settings.BK_API_URL_TMPL.format(api_name=self.auth_config.gateway_name), self.auth_config.gateway_stage
-            )
             return self
 
         # 非蓝鲸网关认证方式，校验 server_base_url 格式
         if not re.match(BASE_URL_REGEX, self.server_config.server_base_url):
             raise ValueError(_("服务地址格式不正确"))
-
         return self

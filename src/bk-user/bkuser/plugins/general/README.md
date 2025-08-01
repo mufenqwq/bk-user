@@ -17,7 +17,6 @@ curl -H "Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=" http://bk.example.com/ap
 
 # bk_apigateway
 curl -H 'X-Bkapi-Authorization: {"bk_app_code":"bkuser","bk_app_secret":"dXNlcm5hbWU6cGFzc3dvcmQ="}' \
-     -H 'X-Bk-Tenant-Id: your_tenant_id' \
      http://bk.example.com/apis/v1/users?page=1&page_size=100
 ```
 

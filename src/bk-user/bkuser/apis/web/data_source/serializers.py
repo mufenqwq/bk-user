@@ -144,7 +144,7 @@ class DataSourceCreateInputSLZ(serializers.Serializer):
         if plugin_id == DataSourcePluginEnum.GENERAL:
             auth_config = attrs["plugin_config"].get("auth_config", {})
             if (
-                auth_config.get("method") == AuthMethod.BK_APIGW
+                auth_config.get("method") == AuthMethod.BK_APIGATEWAY
                 and auth_config.get("tenant_id") != self.context["tenant_id"]
             ):
                 raise ValidationError(_("蓝鲸网关认证方式中，tenant_id 必须与当前租户保持一致"))
@@ -202,7 +202,7 @@ class DataSourceUpdateInputSLZ(serializers.Serializer):
         if self.context["plugin_id"] == DataSourcePluginEnum.GENERAL:
             auth_config = plugin_config.get("auth_config", {})
             if (
-                auth_config.get("method") == AuthMethod.BK_APIGW
+                auth_config.get("method") == AuthMethod.BK_APIGATEWAY
                 and auth_config.get("tenant_id") != self.context["tenant_id"]
             ):
                 raise ValidationError(_("蓝鲸网关认证方式中，tenant_id 必须与当前租户保持一致"))
@@ -283,7 +283,7 @@ class DataSourceTestConnectionInputSLZ(serializers.Serializer):
             if plugin_id == DataSourcePluginEnum.GENERAL:
                 auth_config = attrs["plugin_config"].get("auth_config", {})
                 if (
-                    auth_config.get("method") == AuthMethod.BK_APIGW
+                    auth_config.get("method") == AuthMethod.BK_APIGATEWAY
                     and auth_config.get("tenant_id") != self.context["tenant_id"]
                 ):
                     raise ValidationError(_("蓝鲸网关认证方式中，tenant_id 必须与当前租户保持一致"))
