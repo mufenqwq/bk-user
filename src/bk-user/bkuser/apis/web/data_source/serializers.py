@@ -49,7 +49,7 @@ class GeneralDataSourcePluginValidationMixin:
     """通用数据源插件租户 ID 校验 Mixin"""
 
     @staticmethod
-    def _validate_general_plugin_tenant_id(plugin_config: GeneralDataSourcePluginConfig, tenant_id: str) -> None:
+    def _validate_general_plugin_tenant_id(plugin_config: BasePluginConfig, tenant_id: str) -> None:
         """校验通用数据源插件的租户 ID"""
         if not isinstance(plugin_config, GeneralDataSourcePluginConfig):
             return
@@ -211,7 +211,6 @@ class DataSourceUpdateInputSLZ(GeneralDataSourcePluginValidationMixin, serialize
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        assert isinstance(plugin_config_instance, GeneralDataSourcePluginConfig)
         self._validate_general_plugin_tenant_id(plugin_config_instance, self.context["tenant_id"])
 
         return plugin_config_instance
