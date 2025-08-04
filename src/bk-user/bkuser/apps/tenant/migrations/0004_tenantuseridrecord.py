@@ -24,7 +24,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('data_source', '0002_init_builtin_data_source_plugin'),
-        ('tenant', '0002_init_builtin_user_fields'),
+        ('tenant', '0003_init_default_tenant'),
     ]
 
     operations = [

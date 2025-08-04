@@ -6,7 +6,7 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("tenant", "0005_alter_tenantuseridgenerateconfig_rule"),
+        ("tenant", "0006_alter_tenantuseridgenerateconfig_rule"),
     ]
 
     operations = [

@@ -14,22 +14,26 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
+import logging
+import os
 
 from django.db import migrations
 
+logger = logging.getLogger(__name__)
+
 
 def forwards_func(apps, schema_editor):
-    UserBuiltinField = apps.get_model("tenant", "UserBuiltinField")
-
-    # 更新邮箱字段的 required 属性默认为 True
-    UserBuiltinField.objects.filter(name="email").update(required=True)
+    """初始化本地数据源插件"""
+    if os.getenv("SKIP_INIT_DEFAULT_TENANT", "false").lower() == "true":
+        logger.info("skip initialize first tenant & data source")
+        return
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("tenant", "0009_virtualuserownerrelation_virtualuserapprelation"),
+        ("tenant", "0002_init_builtin_user_fields"),
+        ("data_source", "0002_init_builtin_data_source_plugin"),
+        ("idp", "0002_init_builtin_idp_plugin"),
     ]
 
-    operations = [
-        migrations.RunPython(forwards_func),
-    ]
+    operations = [migrations.RunPython(forwards_func)]
