@@ -154,7 +154,8 @@ class DataSourceCreateInputSLZ(serializers.Serializer):
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        if isinstance(attrs["plugin_config"], GeneralDataSourcePluginConfig):
+        if plugin_id == DataSourcePluginEnum.GENERAL:
+            assert isinstance(attrs["plugin_config"], GeneralDataSourcePluginConfig)
             _validate_general_plugin_tenant_id(attrs["plugin_config"], self.context["tenant_id"])
 
         return attrs
@@ -205,7 +206,8 @@ class DataSourceUpdateInputSLZ(serializers.Serializer):
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        if isinstance(plugin_config_instance, GeneralDataSourcePluginConfig):
+        if self.context["plugin_id"] == DataSourcePluginEnum.GENERAL:
+            assert isinstance(plugin_config_instance, GeneralDataSourcePluginConfig)
             _validate_general_plugin_tenant_id(plugin_config_instance, self.context["tenant_id"])
 
         return plugin_config_instance
@@ -283,7 +285,8 @@ class DataSourceTestConnectionInputSLZ(serializers.Serializer):
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        if isinstance(attrs["plugin_config"], GeneralDataSourcePluginConfig):
+        if plugin_id == DataSourcePluginEnum.GENERAL:
+            assert isinstance(attrs["plugin_config"], GeneralDataSourcePluginConfig)
             _validate_general_plugin_tenant_id(attrs["plugin_config"], self.context["tenant_id"])
 
         return attrs
