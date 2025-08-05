@@ -45,18 +45,11 @@ from bkuser.utils.pydantic import stringify_pydantic_error
 logger = logging.getLogger(__name__)
 
 
-class GeneralDataSourcePluginValidationMixin:
-    """通用数据源插件租户 ID 校验 Mixin"""
-
-    @staticmethod
-    def _validate_general_plugin_tenant_id(plugin_config: BasePluginConfig, tenant_id: str) -> None:
-        """校验通用数据源插件的租户 ID"""
-        if not isinstance(plugin_config, GeneralDataSourcePluginConfig):
-            return
-
-        auth_config = plugin_config.auth_config
-        if auth_config.method == AuthMethod.BK_APIGATEWAY and auth_config.tenant_id != tenant_id:
-            raise ValidationError(_("蓝鲸网关认证方式中，tenant_id 必须与当前租户保持一致"))
+def _validate_general_plugin_tenant_id(plugin_config: GeneralDataSourcePluginConfig, tenant_id: str) -> None:
+    """校验通用数据源插件的租户 ID"""
+    auth_config = plugin_config.auth_config
+    if auth_config.method == AuthMethod.BK_APIGATEWAY and auth_config.tenant_id != tenant_id:
+        raise ValidationError(_("蓝鲸网关认证方式中，tenant_id 必须与当前租户保持一致"))
 
 
 class DataSourceListInputSLZ(serializers.Serializer):
@@ -117,7 +110,7 @@ class DataSourceSyncConfigSLZ(serializers.Serializer):
     )
 
 
-class DataSourceCreateInputSLZ(GeneralDataSourcePluginValidationMixin, serializers.Serializer):
+class DataSourceCreateInputSLZ(serializers.Serializer):
     plugin_id = serializers.CharField(help_text="数据源插件 ID")
     plugin_config = serializers.JSONField(help_text="数据源插件配置")
     field_mapping = serializers.ListField(
@@ -161,7 +154,8 @@ class DataSourceCreateInputSLZ(GeneralDataSourcePluginValidationMixin, serialize
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        self._validate_general_plugin_tenant_id(attrs["plugin_config"], self.context["tenant_id"])
+        if isinstance(attrs["plugin_config"], GeneralDataSourcePluginConfig):
+            _validate_general_plugin_tenant_id(attrs["plugin_config"], self.context["tenant_id"])
 
         return attrs
 
@@ -191,7 +185,7 @@ class DataSourceRetrieveOutputSLZ(serializers.Serializer):
     field_mapping = serializers.JSONField(help_text="用户字段映射")
 
 
-class DataSourceUpdateInputSLZ(GeneralDataSourcePluginValidationMixin, serializers.Serializer):
+class DataSourceUpdateInputSLZ(serializers.Serializer):
     plugin_config = serializers.JSONField(help_text="数据源插件配置")
     field_mapping = serializers.ListField(
         help_text="用户字段映射", child=DataSourceFieldMappingSLZ(), allow_empty=True, required=False, default=list
@@ -211,7 +205,8 @@ class DataSourceUpdateInputSLZ(GeneralDataSourcePluginValidationMixin, serialize
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        self._validate_general_plugin_tenant_id(plugin_config_instance, self.context["tenant_id"])
+        if isinstance(plugin_config_instance, GeneralDataSourcePluginConfig):
+            _validate_general_plugin_tenant_id(plugin_config_instance, self.context["tenant_id"])
 
         return plugin_config_instance
 
@@ -254,7 +249,7 @@ class RawDataSourceDepartmentSLZ(serializers.Serializer):
     parent = serializers.CharField(help_text="父部门 Code")
 
 
-class DataSourceTestConnectionInputSLZ(GeneralDataSourcePluginValidationMixin, serializers.Serializer):
+class DataSourceTestConnectionInputSLZ(serializers.Serializer):
     data_source_id = serializers.IntegerField(help_text="数据源 ID（仅更新时候需要）", required=False)
     plugin_id = serializers.CharField(help_text="数据源插件 ID")
     plugin_config = serializers.JSONField(help_text="数据源插件配置")
@@ -282,22 +277,14 @@ class DataSourceTestConnectionInputSLZ(GeneralDataSourcePluginValidationMixin, s
                 if dictx.get_items(plugin_config, info.key) == SENSITIVE_MASK:
                     dictx.set_items(plugin_config, info.key, info.value)
 
-            # 通用数据源插件 BK_APIGW 认证场景需要校验 tenant_id
-            if plugin_id == DataSourcePluginEnum.GENERAL:
-                auth_config = attrs["plugin_config"].get("auth_config", {})
-                if (
-                    auth_config.get("method") == AuthMethod.BK_APIGATEWAY
-                    and auth_config.get("tenant_id") != self.context["tenant_id"]
-                ):
-                    raise ValidationError(_("蓝鲸网关认证方式中，tenant_id 必须与当前租户保持一致"))
-
         PluginConfigCls = get_plugin_cfg_cls(plugin_id)  # noqa: N806
         try:
             attrs["plugin_config"] = PluginConfigCls(**plugin_config)
         except PDValidationError as e:
             raise ValidationError(_("插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-        self._validate_general_plugin_tenant_id(attrs["plugin_config"], self.context["tenant_id"])
+        if isinstance(attrs["plugin_config"], GeneralDataSourcePluginConfig):
+            _validate_general_plugin_tenant_id(attrs["plugin_config"], self.context["tenant_id"])
 
         return attrs
 
