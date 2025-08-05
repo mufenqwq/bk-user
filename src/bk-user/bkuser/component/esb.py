@@ -68,7 +68,7 @@ def _call_esb_api(http_func, url_path, **kwargs):
             "esb api failed! %s %s, kwargs: %s, request_id: %s, error: %s",
             http_func.__name__,
             url,
-            scrub_data(kwargs, custom_fields=["X-Bkapi-Authorization"]),  # TODO: 移除敏感信息
+            scrub_data(kwargs, custom_fields=["X-Bkapi-Authorization"]),
             request_id,
             resp_data["error"],
         )
@@ -93,7 +93,7 @@ def _call_esb_api(http_func, url_path, **kwargs):
         "esb api error! %s %s, data: %s, request_id: %s, code: %s, message: %s",
         http_func.__name__,
         url,
-        scrub_data(kwargs, custom_fields=["X-Bkapi-Authorization"]),  # TODO: 移除敏感信息
+        scrub_data(kwargs, custom_fields=["X-Bkapi-Authorization"]),
         local.request_id,
         code,
         message,
