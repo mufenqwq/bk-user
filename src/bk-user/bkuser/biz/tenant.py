@@ -17,28 +17,83 @@
 
 import logging
 import operator
+import re
 from functools import reduce
 from typing import Dict, List, Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
-from pydantic import BaseModel
+from django.utils import timezone
+from pydantic import BaseModel, Field
 
+from bkuser.apps.data_source.constants import DataSourceTypeEnum
+from bkuser.apps.data_source.models import LocalDataSourceIdentityInfo
+from bkuser.apps.idp.data_models import gen_data_source_match_rule_of_local
+from bkuser.apps.idp.models import Idp
 from bkuser.apps.tenant.constants import (
+    DEFAULT_TENANT_USER_DISPLAY_NAME_EXPRESSION_CONFIG,
+    DEFAULT_TENANT_USER_VALIDITY_PERIOD_CONFIG,
     DISPLAY_NAME_EXPRESSION_FIELD_PATTERN,
+    TENANT_ID_REGEX,
+    BuiltInTenantIDEnum,
+    TenantStatus,
 )
 from bkuser.apps.tenant.display_name_cache import get_display_name_config
 from bkuser.apps.tenant.models import (
     DataSource,
     DataSourceUser,
+    Tenant,
+    TenantManager,
     TenantUser,
     TenantUserCustomField,
     TenantUserDisplayNameExpressionConfig,
+    TenantUserValidityPeriodConfig,
     UserBuiltinField,
 )
+from bkuser.apps.tenant.utils import TenantUserIDGenerator
+from bkuser.common.constants import PERMANENT_TIME
+from bkuser.common.hashers import make_password
+from bkuser.common.passwd import PasswordValidator
+from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
+from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
+from bkuser.plugins.base import get_default_plugin_cfg
+from bkuser.plugins.constants import DataSourcePluginEnum
+from bkuser.plugins.local.constants import NEVER_EXPIRE_TIME, NotificationMethod, PasswordGenerateMethod
+from bkuser.plugins.local.models import LocalDataSourcePluginConfig
+from bkuser.settings import DEFAULT_TENANT_LOGO
 
 logger = logging.getLogger(__name__)
+
+
+class TenantCreateConfig(BaseModel):
+    """租户创建配置"""
+
+    tenant_id: str
+    tenant_name: str
+    logo: str = DEFAULT_TENANT_LOGO
+    status: TenantStatus = TenantStatus.ENABLED
+    is_default: bool = False
+
+    # 内置管理员配置
+    # 所有租户的内置管理员 Username 默认为 admin
+    admin_username: str = "admin"
+    admin_password: str = ""
+    admin_email: str = ""
+    admin_phone: str = ""
+    admin_phone_country_code: str = settings.DEFAULT_PHONE_COUNTRY_CODE
+
+    # 数据源配置
+    notification_methods: List[str] = Field(default_factory=list)
+    fixed_password: str = ""
+
+    # 是否创建内置虚拟用户
+    create_builtin_virtual_user: bool = False
+    builtin_virtual_username: str = "bk_admin"
+
+    # 是否发送密码通知
+    send_password_notification: bool = True
 
 
 class TenantUserPhoneInfo(BaseModel):
@@ -50,6 +105,302 @@ class TenantUserPhoneInfo(BaseModel):
 class TenantUserEmailInfo(BaseModel):
     is_inherited_email: bool
     custom_email: Optional[str] = ""
+
+
+class TenantCreateHandler:
+    @staticmethod
+    def validate_tenant_id(tenant_id: str) -> None:
+        """验证租户 ID"""
+        if not re.fullmatch(TENANT_ID_REGEX, tenant_id):
+            raise ValueError(
+                f"{tenant_id} does not meet the naming requirements for Tenant ID: must be composed of "
+                "3-32 lowercase letters, digits, or hyphens (-), starting with a lowercase "
+                "letter and ending with a lowercase letter or digit, and cannot contain two consecutive hyphens(--)"
+            )
+
+        if Tenant.objects.filter(id=tenant_id).exists():
+            raise ValueError(f"Tenant {tenant_id} already exists")
+
+        if tenant_id in [BuiltInTenantIDEnum.SYSTEM, BuiltInTenantIDEnum.DEFAULT]:
+            raise ValueError(f"Tenant {tenant_id} is reserved")
+
+    @staticmethod
+    def validate_password(password: str) -> None:
+        """验证密码"""
+        cfg: LocalDataSourcePluginConfig = get_default_plugin_cfg(DataSourcePluginEnum.LOCAL)  # type: ignore
+        ret = PasswordValidator(cfg.password_rule.to_rule()).validate(password)  # type: ignore
+        if not ret.ok:
+            raise ValueError(f"The password does not meet the password rules.:{ret.exception_message}")
+
+    @staticmethod
+    def create_tenant_base(config: TenantCreateConfig) -> Tenant:
+        """阶段1：创建租户基础信息"""
+        return Tenant.objects.create(
+            id=config.tenant_id,
+            name=config.tenant_name,
+            logo=config.logo,
+            status=config.status,
+            is_default=config.is_default,
+        )
+
+    @staticmethod
+    def init_tenant_default_settings(tenant: Tenant) -> None:
+        """阶段2：初始化租户默认配置"""
+        # 账号有效期
+        TenantUserValidityPeriodConfig.objects.create(tenant=tenant, **DEFAULT_TENANT_USER_VALIDITY_PERIOD_CONFIG)
+        # DisplayName 表达式
+        TenantUserDisplayNameExpressionConfig.objects.create(
+            tenant=tenant, **DEFAULT_TENANT_USER_DISPLAY_NAME_EXPRESSION_CONFIG
+        )
+
+    @staticmethod
+    def create_complex_builtin_data_source(
+        tenant_id: str, fixed_password: str, notification_methods: List[str]
+    ) -> DataSource:
+        """创建租户内建管理的本地数据源（Web API 方式）"""
+        # 获取本地数据源的默认配置
+        plugin_id = DataSourcePluginEnum.LOCAL
+        plugin_config = get_default_plugin_cfg(plugin_id)
+        assert isinstance(plugin_config, LocalDataSourcePluginConfig)
+        assert plugin_config.password_initial is not None
+        assert plugin_config.login_limit is not None
+        assert plugin_config.password_expire is not None
+
+        # 启用密码功能
+        plugin_config.enable_password = True
+        # 密码有效期为永久，不会有过期续期的功能
+        plugin_config.password_expire.valid_time = NEVER_EXPIRE_TIME
+
+        # 固定密码
+        plugin_config.password_initial.generate_method = PasswordGenerateMethod.FIXED
+        plugin_config.password_initial.fixed_password = fixed_password
+        # 设置通知方式
+        plugin_config.password_initial.notification.enabled_methods = [
+            NotificationMethod(n) for n in notification_methods
+        ]
+
+        return DataSource.objects.create(
+            type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
+            owner_tenant_id=tenant_id,
+            plugin_id=plugin_id,
+            plugin_config=plugin_config,
+        )
+
+    @staticmethod
+    def create_simple_builtin_data_source(tenant_id: str) -> DataSource:
+        """创建简单的内建管理数据源（命令行方式）"""
+        return DataSource.objects.create(
+            type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
+            owner_tenant_id=tenant_id,
+            plugin_id=DataSourcePluginEnum.LOCAL,
+            plugin_config=get_default_plugin_cfg(DataSourcePluginEnum.LOCAL),
+        )
+
+    @staticmethod
+    def create_virtual_data_source(tenant_id: str) -> DataSource:
+        """创建虚拟数据源"""
+        return DataSource.objects.create(
+            owner_tenant_id=tenant_id,
+            type=DataSourceTypeEnum.VIRTUAL,
+            plugin_config=LocalDataSourcePluginConfig(enable_password=False),
+            plugin_id=DataSourcePluginEnum.LOCAL,
+        )
+
+    @staticmethod
+    def create_builtin_manager(
+        tenant: Tenant,
+        data_source: DataSource,
+        username: str,
+        password: str,
+        email: str = "",
+        phone: str = "",
+        phone_country_code: str = "",
+    ) -> TenantUser:
+        """创建内置管理员"""
+        # 创建数据源用户
+        data_source_user = DataSourceUser.objects.create(
+            data_source=data_source,
+            code=username,
+            username=username,
+            full_name=username,
+            email=email,
+            phone=phone,
+            phone_country_code=phone_country_code,
+        )
+
+        # 创建本地身份信息
+        LocalDataSourceIdentityInfo.objects.create(
+            user=data_source_user,
+            password=make_password(password),
+            password_updated_at=timezone.now(),
+            password_expired_at=PERMANENT_TIME,
+            data_source=data_source,
+            username=username,
+        )
+
+        # 创建租户用户
+        tenant_user = TenantUser.objects.create(
+            tenant=tenant,
+            data_source_user=data_source_user,
+            data_source=data_source,
+            id=TenantUserIDGenerator(tenant.id, data_source).gen(data_source_user),
+        )
+
+        # 创建管理员关联
+        TenantManager.objects.create(tenant=tenant, tenant_user=tenant_user)
+
+        return tenant_user
+
+    @staticmethod
+    def create_builtin_virtual_user(tenant: Tenant, data_source: DataSource, username: str) -> TenantUser:
+        """创建内置虚拟用户"""
+        data_source_user = DataSourceUser.objects.create(
+            data_source=data_source,
+            username=username,
+            full_name=username,
+            code=username,
+        )
+
+        return TenantUser.objects.create(
+            id=TenantUserIDGenerator(tenant.id, data_source).gen(data_source_user),
+            tenant_id=tenant.id,
+            data_source_user=data_source_user,
+            data_source=data_source,
+        )
+
+    @staticmethod
+    def create_builtin_idp(tenant_id: str, data_source_id: int, name: str = "Administrator") -> Idp:
+        """创建内置管理员账密登录认证源"""
+        return Idp.objects.create(
+            name=name,
+            plugin_id=BuiltinIdpPluginEnum.LOCAL,
+            owner_tenant_id=tenant_id,
+            plugin_config=LocalIdpPluginConfig(data_source_ids=[data_source_id]),
+            data_source_match_rules=[gen_data_source_match_rule_of_local(data_source_id).model_dump()],
+            data_source_id=data_source_id,
+        )
+
+    @classmethod
+    def create_tenant(cls, config: TenantCreateConfig) -> Tenant:
+        """创建租户的统一入口方法
+
+        :param config: 租户创建配置
+        :return: 创建的租户对象
+        """
+
+        # 验证租户 ID
+        cls.validate_tenant_id(config.tenant_id)
+
+        # 验证密码
+        if config.admin_password:
+            cls.validate_password(config.admin_password)
+
+        with transaction.atomic():
+            # 阶段1：创建租户基础信息
+            tenant = cls.create_tenant_base(config)
+
+            # 阶段2：初始化租户默认配置
+            cls.init_tenant_default_settings(tenant)
+
+            # 阶段3：创建内置管理数据源
+            if config.send_password_notification:
+                data_source = cls.create_complex_builtin_data_source(
+                    tenant.id, config.fixed_password, config.notification_methods
+                )
+            else:
+                data_source = cls.create_simple_builtin_data_source(tenant.id)
+
+            # 阶段4：创建虚拟数据源
+            virtual_data_source = cls.create_virtual_data_source(tenant.id)
+
+            # 阶段5：创建内置管理员
+            cls.create_builtin_manager(
+                tenant=tenant,
+                data_source=data_source,
+                username=config.admin_username,
+                password=config.admin_password,
+                email=config.admin_email,
+                phone=config.admin_phone,
+                phone_country_code=config.admin_phone_country_code,
+            )
+
+            # 阶段6：创建内置虚拟用户（只有系统租户/默认租户需要）
+            if config.create_builtin_virtual_user:
+                cls.create_builtin_virtual_user(tenant, virtual_data_source, config.builtin_virtual_username)
+
+            # 阶段7：创建内置认证源
+            cls.create_builtin_idp(tenant.id, data_source.id)
+
+        return tenant
+
+    @classmethod
+    def create_tenant_via_web_api(
+        cls,
+        tenant_id: str,
+        tenant_name: str,
+        logo: str,
+        status: TenantStatus,
+        fixed_password: str,
+        notification_methods: List[str],
+        email: str = "",
+        phone: str = "",
+        phone_country_code: str = "",
+    ) -> Tenant:
+        """通过Web API 创建租户"""
+        config = TenantCreateConfig(
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            logo=logo,
+            status=status,
+            fixed_password=fixed_password,
+            notification_methods=notification_methods,
+            admin_email=email,
+            admin_phone=phone,
+            admin_phone_country_code=phone_country_code,
+            send_password_notification=True,
+            create_builtin_virtual_user=False,
+        )
+
+        return cls.create_tenant(config)
+
+    @classmethod
+    def create_tenant_via_command(
+        cls,
+        tenant_id: str,
+        password: str,
+    ) -> Tenant:
+        """通过命令行创建租户"""
+        config = TenantCreateConfig(
+            tenant_id=tenant_id,
+            tenant_name=tenant_id,
+            admin_password=password,
+            send_password_notification=False,
+            create_builtin_virtual_user=False,
+        )
+
+        return cls.create_tenant(config)
+
+    @classmethod
+    def init_default_tenant(
+        cls,
+        tenant_id: str,
+        tenant_name: str,
+        admin_username: str,
+        admin_password: str,
+    ) -> Tenant:
+        """初始化默认租户"""
+        config = TenantCreateConfig(
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            is_default=True,
+            admin_username=admin_username,
+            admin_password=admin_password,
+            send_password_notification=False,
+            create_builtin_virtual_user=True,
+            builtin_virtual_username="bk_admin",
+        )
+
+        return cls.create_tenant(config)
 
 
 class TenantUserHandler:

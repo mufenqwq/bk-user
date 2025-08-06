@@ -178,6 +178,9 @@ layers = [
     "bkuser.common",
     "bkuser.utils",
 ]
+ignore_imports = [
+    "bkuser.apps.tenant.management.commands.* -> bkuser.biz.tenant",
+]
 
 # apps 分层
 [[tool.importlinter.contracts]]
