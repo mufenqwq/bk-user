@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def forwards_func(apps, schema_editor):
-    """初始化本地数据源插件"""
-    if os.getenv("SKIP_INIT_DEFAULT_TENANT", "false").lower() == "true":
-        logger.info("skip initialize first tenant & data source")
-        return
+    return
 
 
 class Migration(migrations.Migration):
