@@ -483,7 +483,7 @@ RABBITMQ_PASSWORD = env.str("RABBITMQ_PASSWORD", default="")
 RABBITMQ_TLS_ENABLED = env.bool("RABBITMQ_TLS_ENABLED", default=False)
 RABBITMQ_TLS_CERT_CA_FILE = env.str("RABBITMQ_TLS_CERT_CA_FILE", default="")
 RABBITMQ_TLS_CERT_FILE = env.str("RABBITMQ_TLS_CERT_FILE", default="")
-RABBITMQ_TLS_CERT_KEY_FILE = env.str("RABBITMQ_CERT_KEY_FILE", default="")
+RABBITMQ_TLS_CERT_KEY_FILE = env.str("RABBITMQ_TLS_CERT_KEY_FILE", default="")
 if not CELERY_BROKER_URL and all([RABBITMQ_VHOST, RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD]):
     CELERY_BROKER_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/{RABBITMQ_VHOST}"
     if RABBITMQ_TLS_ENABLED:
@@ -532,7 +532,7 @@ if not CELERY_BROKER_URL:
             CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl"] = True
             CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_ca_certs"] = REDIS_TLS_CERT_CA_FILE
             CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_cert_reqs"] = ssl.CERT_REQUIRED
-            CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_check_hostname"] = REDIS_TLS_CERT_FILE
+            CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_check_hostname"] = REDIS_TLS_CHECK_HOSTNAME
             # mTLS
             if REDIS_TLS_CERT_FILE and REDIS_TLS_CERT_KEY_FILE:
                 CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_certfile"] = REDIS_TLS_CERT_FILE
