@@ -121,7 +121,7 @@ class TenantUserEmailInfo(BaseModel):
 class TenantCreate:
     @staticmethod
     def create_tenant_base(info: TenantInfo) -> Tenant:
-        """阶段1：创建租户基础信息"""
+        """创建租户基础信息"""
         return Tenant.objects.create(
             id=info.tenant_id,
             name=info.tenant_name,
@@ -132,7 +132,7 @@ class TenantCreate:
 
     @staticmethod
     def init_tenant_default_settings(tenant: Tenant) -> None:
-        """阶段2：初始化租户默认配置"""
+        """初始化租户默认配置"""
         # 账号有效期
         TenantUserValidityPeriodConfig.objects.create(tenant=tenant, **DEFAULT_TENANT_USER_VALIDITY_PERIOD_CONFIG)
         # DisplayName 表达式
