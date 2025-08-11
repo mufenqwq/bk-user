@@ -309,7 +309,7 @@ class TenantCreate:
                 phone_country_code=plan.admin.phone_country_code,
             )
 
-            # 阶段6：创建内置虚拟用户（只有系统租户/默认租户需要）
+            # 阶段6：创建内置虚拟用户
             if plan.virtual_user_policy.create:
                 cls.create_builtin_virtual_user(tenant, virtual_data_source, plan.virtual_user_policy.username)
 
