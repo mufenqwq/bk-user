@@ -74,7 +74,6 @@ class Command(BaseCommand):
         self._check_tenant(tenant_id)
         self._check_password(password)
 
-        # 编排租户创建计划
         plan = TenantCreatePlan(
             tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_id, is_default=False),
             admin=AdminInfo(username="admin", password=password),

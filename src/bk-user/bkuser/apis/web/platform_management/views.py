@@ -96,7 +96,6 @@ class TenantListCreateApi(generics.ListCreateAPIView):
         slz.is_valid(raise_exception=True)
         data = slz.validated_data
 
-        # 编排租户创建计划
         plan = TenantCreatePlan(
             tenant=TenantInfo(
                 tenant_id=data["id"],
