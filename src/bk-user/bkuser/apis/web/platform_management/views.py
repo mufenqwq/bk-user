@@ -117,9 +117,9 @@ class TenantListCreateApi(generics.ListCreateAPIView):
             ),
         )
 
-        # 对租户内置管理员进行账密信息初始化 & 发送密码通知
         # 获取租户的内置管理数据源
         data_source = DataSource.objects.get(owner_tenant_id=tenant.id, type=DataSourceTypeEnum.BUILTIN_MANAGEMENT)
+        # 对租户内置管理员进行账密信息初始化 & 发送密码通知
         initialize_identity_info_and_send_notification.delay(data_source.id)
 
         # 【审计】创建租户审计对象
