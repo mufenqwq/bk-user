@@ -21,12 +21,10 @@ from django.core.management.base import BaseCommand
 from bkuser.apps.tenant.constants import TENANT_ID_REGEX, BuiltInTenantIDEnum
 from bkuser.apps.tenant.models import Tenant
 from bkuser.biz.tenant import (
-    AdminInfo,
-    BuiltinDataSourceInitPolicy,
-    TenantCreate,
-    TenantCreatePlan,
+    BuiltinManagementDataSourceConfig,
+    BuiltinManagerInfo,
+    TenantCreator,
     TenantInfo,
-    VirtualUserPolicy,
 )
 from bkuser.common.passwd.validator import PasswordValidator
 from bkuser.plugins.base import get_default_plugin_cfg
@@ -74,14 +72,12 @@ class Command(BaseCommand):
         self._check_tenant(tenant_id)
         self._check_password(password)
 
-        plan = TenantCreatePlan(
-            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_id, is_default=False),
-            admin=AdminInfo(username="admin", password=password),
-            builtin_ds_policy=BuiltinDataSourceInitPolicy(send_password_notification=False),
-            virtual_user_policy=VirtualUserPolicy(create=False),
-        )
         # 创建租户
-        tenant = TenantCreate.create_tenant(plan)
+        tenant = TenantCreator.create(
+            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_id, is_default=False),
+            builtin_manager=BuiltinManagerInfo(username="admin", password=password),
+            builtin_ds_config=BuiltinManagementDataSourceConfig(send_password_notification=False),
+        )
 
         # 创建租户成功提示
         self.stdout.write(

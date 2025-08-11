@@ -21,12 +21,11 @@ from bkuser.apps.tenant.constants import (
     BuiltInTenantIDEnum,
 )
 from bkuser.biz.tenant import (
-    AdminInfo,
-    BuiltinDataSourceInitPolicy,
-    TenantCreate,
-    TenantCreatePlan,
+    BuiltinManagementDataSourceConfig,
+    BuiltinManagerInfo,
+    TenantCreator,
     TenantInfo,
-    VirtualUserPolicy,
+    VirtualUserInfo,
 )
 
 
@@ -53,13 +52,12 @@ class Command(BaseCommand):
             f"start initialize first tenant[{tenant_id}] & data source with admin user [{admin_username}]..."
         )
 
-        plan = TenantCreatePlan(
-            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_name, is_default=True),
-            admin=AdminInfo(username=admin_username, password=admin_password),
-            builtin_ds_policy=BuiltinDataSourceInitPolicy(send_password_notification=False),
-            virtual_user_policy=VirtualUserPolicy(create=True, username="bk_admin"),
-        )
         # 创建租户
-        TenantCreate.create_tenant(plan)
+        TenantCreator.create(
+            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_name, is_default=True),
+            builtin_manager=BuiltinManagerInfo(username=admin_username, password=admin_password),
+            builtin_ds_config=BuiltinManagementDataSourceConfig(send_password_notification=False),
+            virtual_user=VirtualUserInfo(username="bk_admin"),
+        )
 
         self.stdout.write(f"Initialized first tenant [{tenant_id}] with admin user [{admin_username}] successfully")

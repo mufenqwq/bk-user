@@ -45,12 +45,10 @@ from bkuser.biz.auditor import TenantAuditor
 from bkuser.biz.data_source import DataSourceHandler
 from bkuser.biz.organization import DataSourceUserHandler
 from bkuser.biz.tenant import (
-    AdminInfo,
-    BuiltinDataSourceInitPolicy,
-    TenantCreate,
-    TenantCreatePlan,
+    BuiltinManagementDataSourceConfig,
+    BuiltinManagerInfo,
+    TenantCreator,
     TenantInfo,
-    VirtualUserPolicy,
 )
 from bkuser.common.error_codes import error_codes
 from bkuser.common.views import ExcludePatchAPIViewMixin
@@ -96,7 +94,8 @@ class TenantListCreateApi(generics.ListCreateAPIView):
         slz.is_valid(raise_exception=True)
         data = slz.validated_data
 
-        plan = TenantCreatePlan(
+        # 创建租户
+        tenant = TenantCreator.create(
             tenant=TenantInfo(
                 tenant_id=data["id"],
                 tenant_name=data["name"],
@@ -104,23 +103,19 @@ class TenantListCreateApi(generics.ListCreateAPIView):
                 status=data["status"],
                 is_default=False,
             ),
-            admin=AdminInfo(
+            builtin_manager=BuiltinManagerInfo(
                 username="admin",
                 password="",
                 email=data["email"],
                 phone=data["phone"],
                 phone_country_code=data["phone_country_code"],
             ),
-            builtin_ds_policy=BuiltinDataSourceInitPolicy(
+            builtin_ds_config=BuiltinManagementDataSourceConfig(
                 send_password_notification=True,
                 fixed_password=data["fixed_password"],
                 notification_methods=data["notification_methods"],
             ),
-            virtual_user_policy=VirtualUserPolicy(create=False),
         )
-
-        # 创建租户
-        tenant = TenantCreate.create_tenant(plan)
 
         # 对租户内置管理员进行账密信息初始化 & 发送密码通知
         # 获取租户的内置管理数据源

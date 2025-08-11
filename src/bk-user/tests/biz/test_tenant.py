@@ -25,13 +25,13 @@ from bkuser.apps.tenant.models import (
     TenantUserDisplayNameExpressionConfig,
     TenantUserValidityPeriodConfig,
 )
-from bkuser.biz.tenant import TenantCreate, TenantInfo
+from bkuser.biz.tenant import TenantCreator, TenantInfo
 from bkuser.plugins.constants import DataSourcePluginEnum
 
 pytestmark = pytest.mark.django_db
 
 
-class TestTenantCreate:
+class TestTenantCreator:
     def test_create_tenant_base(self):
         """测试创建租户基础信息"""
         info = TenantInfo(
@@ -42,7 +42,7 @@ class TestTenantCreate:
             is_default=False,
         )
 
-        tenant = TenantCreate.create_tenant_base(info)
+        tenant = TenantCreator.create_tenant_base(info)
 
         assert tenant.id == "test-tenant"
         assert tenant.name == "Test Tenant"
@@ -54,7 +54,7 @@ class TestTenantCreate:
         """测试初始化租户默认配置"""
         tenant = Tenant.objects.create(id="test-tenant", name="Test Tenant")
 
-        TenantCreate.init_tenant_default_settings(tenant)
+        TenantCreator.create_tenant_default_settings(tenant)
 
         # 验证配置已创建
         assert TenantUserValidityPeriodConfig.objects.filter(tenant=tenant).exists()
@@ -62,14 +62,14 @@ class TestTenantCreate:
 
     def test_create_simple_builtin_data_source(self):
         """测试创建简单的内建管理数据源"""
-        data_source = TenantCreate.create_builtin_data_source("test-tenant")
+        data_source = TenantCreator.create_builtin_data_source("test-tenant")
 
         assert data_source.type == DataSourceTypeEnum.BUILTIN_MANAGEMENT
         assert data_source.owner_tenant_id == "test-tenant"
 
     def test_create_complex_builtin_data_source(self):
         """测试创建复杂的内建管理数据源"""
-        data_source = TenantCreate.create_builtin_data_source(
+        data_source = TenantCreator.create_builtin_data_source(
             "test-tenant", fixed_password="Passwd-123456!", notification_methods=["email"]
         )
 
@@ -78,7 +78,7 @@ class TestTenantCreate:
 
     def test_create_virtual_data_source(self):
         """测试创建虚拟数据源"""
-        data_source = TenantCreate.create_virtual_data_source("test-tenant")
+        data_source = TenantCreator.create_virtual_data_source("test-tenant")
 
         assert data_source.type == DataSourceTypeEnum.VIRTUAL
         assert data_source.owner_tenant_id == "test-tenant"
@@ -86,10 +86,10 @@ class TestTenantCreate:
     def test_create_builtin_manager(self):
         """测试创建内置管理员"""
         tenant = Tenant.objects.create(id="test-tenant", name="Test Tenant")
-        # 使用 TenantCreate 的方法来创建数据源，确保配置正确
-        data_source = TenantCreate.create_builtin_data_source(tenant.id)
 
-        tenant_user = TenantCreate.create_builtin_manager(
+        data_source = TenantCreator.create_builtin_data_source(tenant.id)
+
+        tenant_user = TenantCreator.create_builtin_manager(
             tenant=tenant,
             data_source=data_source,
             username="admin",
@@ -126,7 +126,7 @@ class TestTenantCreate:
             plugin_id=DataSourcePluginEnum.LOCAL,
         )
 
-        tenant_user = TenantCreate.create_builtin_virtual_user(
+        tenant_user = TenantCreator.create_builtin_virtual_user(
             tenant=tenant, data_source=data_source, username="bk_admin"
         )
 
@@ -140,10 +140,9 @@ class TestTenantCreate:
 
     def test_create_builtin_idp(self):
         """测试创建内置认证源"""
-        # 使用 TenantCreate 的方法来创建数据源，确保配置正确
-        data_source = TenantCreate.create_builtin_data_source("test-tenant")
+        data_source = TenantCreator.create_builtin_data_source("test-tenant")
 
-        idp = TenantCreate.create_builtin_idp("test-tenant", data_source.id)
+        idp = TenantCreator.create_builtin_idp("test-tenant", data_source.id)
 
         assert idp.owner_tenant_id == "test-tenant"
         assert idp.data_source_id == data_source.id

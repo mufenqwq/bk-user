@@ -73,7 +73,7 @@ class TenantInfo(BaseModel):
     is_default: bool = False
 
 
-class AdminInfo(BaseModel):
+class BuiltinManagerInfo(BaseModel):
     """内置管理员配置"""
 
     username: str = "admin"
@@ -83,28 +83,18 @@ class AdminInfo(BaseModel):
     phone_country_code: str = settings.DEFAULT_PHONE_COUNTRY_CODE
 
 
-class BuiltinDataSourceInitPolicy(BaseModel):
-    """内置管理数据源初始化策略（密码与通知）"""
+class BuiltinManagementDataSourceConfig(BaseModel):
+    """内置管理数据源配置"""
 
     send_password_notification: bool = True
     fixed_password: str = ""
     notification_methods: List[str] = Field(default_factory=list)
 
 
-class VirtualUserPolicy(BaseModel):
-    """内置虚拟用户策略"""
+class VirtualUserInfo(BaseModel):
+    """虚拟用户信息"""
 
-    create: bool = False
     username: str = "bk_admin"
-
-
-class TenantCreatePlan(BaseModel):
-    """租户创建计划"""
-
-    tenant: TenantInfo
-    admin: AdminInfo
-    builtin_ds_policy: BuiltinDataSourceInitPolicy
-    virtual_user_policy: VirtualUserPolicy
 
 
 class TenantUserPhoneInfo(BaseModel):
@@ -118,7 +108,7 @@ class TenantUserEmailInfo(BaseModel):
     custom_email: Optional[str] = ""
 
 
-class TenantCreate:
+class TenantCreator:
     @staticmethod
     def create_tenant_base(info: TenantInfo) -> Tenant:
         """创建租户基础信息"""
@@ -131,8 +121,8 @@ class TenantCreate:
         )
 
     @staticmethod
-    def init_tenant_default_settings(tenant: Tenant) -> None:
-        """初始化租户默认配置"""
+    def create_tenant_default_settings(tenant: Tenant) -> None:
+        """创建租户默认配置"""
         # 账号有效期
         TenantUserValidityPeriodConfig.objects.create(tenant=tenant, **DEFAULT_TENANT_USER_VALIDITY_PERIOD_CONFIG)
         # DisplayName 表达式
@@ -268,11 +258,19 @@ class TenantCreate:
             data_source_id=data_source_id,
         )
 
-    @classmethod
-    def create_tenant(cls, plan: TenantCreatePlan) -> Tenant:
+    @staticmethod
+    def create(
+        tenant: TenantInfo,
+        builtin_manager: BuiltinManagerInfo,
+        builtin_ds_config: BuiltinManagementDataSourceConfig,
+        virtual_user: VirtualUserInfo | None = None,
+    ) -> Tenant:
         """创建租户的统一入口方法
 
-        :param plan: 租户创建计划
+        :param tenant: 租户相关信息
+        :param builtin_manager: 内置管理员信息
+        :param builtin_ds_config: 内置数据源配置
+        :param virtual_user: 虚拟用户相关信息
         :return: 创建的租户对象
         """
 
@@ -280,41 +278,41 @@ class TenantCreate:
 
         with transaction.atomic():
             # 阶段1：创建租户基础信息
-            tenant = cls.create_tenant_base(plan.tenant)
+            tenant = TenantCreator.create_tenant_base(tenant)
 
             # 阶段2：初始化租户默认配置
-            cls.init_tenant_default_settings(tenant)
+            TenantCreator.create_tenant_default_settings(tenant)
 
             # 阶段3：创建内置管理数据源
-            data_source = cls.create_builtin_data_source(
+            data_source = TenantCreator.create_builtin_data_source(
                 tenant.id,
                 enable_password=True,
-                fixed_password=plan.builtin_ds_policy.fixed_password,
-                notification_methods=plan.builtin_ds_policy.notification_methods
-                if plan.builtin_ds_policy.send_password_notification
+                fixed_password=builtin_ds_config.fixed_password,
+                notification_methods=builtin_ds_config.notification_methods
+                if builtin_ds_config.send_password_notification
                 else None,
             )
 
             # 阶段4：创建虚拟数据源
-            virtual_data_source = cls.create_virtual_data_source(tenant.id)
+            virtual_data_source = TenantCreator.create_virtual_data_source(tenant.id)
 
             # 阶段5：创建内置管理员
-            cls.create_builtin_manager(
+            TenantCreator.create_builtin_manager(
                 tenant=tenant,
                 data_source=data_source,
-                username=plan.admin.username,
-                password=plan.admin.password,
-                email=plan.admin.email,
-                phone=plan.admin.phone,
-                phone_country_code=plan.admin.phone_country_code,
+                username=builtin_manager.username,
+                password=builtin_manager.password,
+                email=builtin_manager.email,
+                phone=builtin_manager.phone,
+                phone_country_code=builtin_manager.phone_country_code,
             )
 
             # 阶段6：创建内置虚拟用户
-            if plan.virtual_user_policy.create:
-                cls.create_builtin_virtual_user(tenant, virtual_data_source, plan.virtual_user_policy.username)
+            if virtual_user:
+                TenantCreator.create_builtin_virtual_user(tenant, virtual_data_source, virtual_user.username)
 
             # 阶段7：创建内置认证源
-            cls.create_builtin_idp(tenant.id, data_source.id)
+            TenantCreator.create_builtin_idp(tenant.id, data_source.id)
 
         return tenant
 
