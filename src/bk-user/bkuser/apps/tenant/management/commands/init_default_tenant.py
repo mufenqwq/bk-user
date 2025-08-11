@@ -20,7 +20,14 @@ from django.core.management import BaseCommand
 from bkuser.apps.tenant.constants import (
     BuiltInTenantIDEnum,
 )
-from bkuser.biz.tenant import TenantCreateHandler
+from bkuser.biz.tenant import (
+    AdminInfo,
+    BuiltinDataSourceInitPolicy,
+    TenantCreate,
+    TenantCreatePlan,
+    TenantInfo,
+    VirtualUserPolicy,
+)
 
 
 class Command(BaseCommand):
@@ -47,6 +54,12 @@ class Command(BaseCommand):
         )
 
         # 创建租户
-        TenantCreateHandler.init_default_tenant(tenant_id, tenant_name, admin_username, admin_password)
+        plan = TenantCreatePlan(
+            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_name, is_default=True),
+            admin=AdminInfo(username=admin_username, password=admin_password),
+            builtin_ds_policy=BuiltinDataSourceInitPolicy(send_password_notification=False),
+            virtual_user_policy=VirtualUserPolicy(create=True, username="bk_admin"),
+        )
+        TenantCreate.create_tenant(plan)
 
         self.stdout.write(f"Initialized first tenant [{tenant_id}] with admin user [{admin_username}] successfully")

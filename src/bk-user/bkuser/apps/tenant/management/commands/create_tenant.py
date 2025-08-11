@@ -14,10 +14,24 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
+import re
 
 from django.core.management.base import BaseCommand
 
-from bkuser.biz.tenant import TenantCreateHandler
+from bkuser.apps.tenant.constants import TENANT_ID_REGEX, BuiltInTenantIDEnum
+from bkuser.apps.tenant.models import Tenant
+from bkuser.biz.tenant import (
+    AdminInfo,
+    BuiltinDataSourceInitPolicy,
+    TenantCreate,
+    TenantCreatePlan,
+    TenantInfo,
+    VirtualUserPolicy,
+)
+from bkuser.common.passwd.validator import PasswordValidator
+from bkuser.plugins.base import get_default_plugin_cfg
+from bkuser.plugins.constants import DataSourcePluginEnum
+from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
 
 class Command(BaseCommand):
@@ -30,11 +44,44 @@ class Command(BaseCommand):
         parser.add_argument("--tenant_id", type=str, help="Tenant ID", required=True)
         parser.add_argument("--password", type=str, help="Built-In Manager - admin password", required=True)
 
+    @staticmethod
+    def _check_tenant(tenant_id: str):
+        if not re.fullmatch(TENANT_ID_REGEX, tenant_id):
+            raise ValueError(
+                f"{tenant_id} does not meet the naming requirements for Tenant ID: must be composed of "
+                "3-32 lowercase letters, digits, or hyphens (-), starting with a lowercase "
+                "letter and ending with a lowercase letter or digit, and cannot contain two consecutive hyphens(--)"
+            )
+
+        if Tenant.objects.filter(id=tenant_id).exists():
+            raise ValueError(f"Tenant {tenant_id} already exists")
+
+        if tenant_id in [BuiltInTenantIDEnum.SYSTEM, BuiltInTenantIDEnum.DEFAULT]:
+            raise ValueError(f"Tenant {tenant_id} is reserved")
+
+    @staticmethod
+    def _check_password(password: str):
+        cfg: LocalDataSourcePluginConfig = get_default_plugin_cfg(DataSourcePluginEnum.LOCAL)  # type: ignore
+        ret = PasswordValidator(cfg.password_rule.to_rule()).validate(password)  # type: ignore
+        if not ret.ok:
+            raise ValueError(f"The password does not meet the password rules.:{ret.exception_message}")
+
     def handle(self, *args, **kwargs):
         tenant_id = kwargs["tenant_id"]
         password = kwargs["password"]
 
-        tenant = TenantCreateHandler.create_tenant_via_command(tenant_id, password)
+        # 校验
+        self._check_tenant(tenant_id)
+        self._check_password(password)
+
+        # 编排租户创建计划
+        plan = TenantCreatePlan(
+            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_id, is_default=False),
+            admin=AdminInfo(username="admin", password=password),
+            builtin_ds_policy=BuiltinDataSourceInitPolicy(send_password_notification=False),
+            virtual_user_policy=VirtualUserPolicy(create=False),
+        )
+        tenant = TenantCreate.create_tenant(plan)
 
         # 创建租户成功提示
         self.stdout.write(
