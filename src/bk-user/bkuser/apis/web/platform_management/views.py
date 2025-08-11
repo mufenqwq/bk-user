@@ -96,7 +96,7 @@ class TenantListCreateApi(generics.ListCreateAPIView):
 
         # 创建租户
         tenant = TenantCreator.create(
-            tenant=TenantInfo(
+            tenant_info=TenantInfo(
                 tenant_id=data["id"],
                 tenant_name=data["name"],
                 logo=data["logo"],

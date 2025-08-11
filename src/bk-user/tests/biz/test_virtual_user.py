@@ -59,7 +59,7 @@ class TestVirtualUserHandler:
             # 创建租户用户
             tenant_user = TenantUser.objects.create(
                 id=username,
-                tenant=random_tenant,
+                tenant_info=random_tenant,
                 data_source_user=data_source_user,
                 data_source=bare_virtual_data_source,
             )

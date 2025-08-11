@@ -54,7 +54,7 @@ class Command(BaseCommand):
 
         # 创建租户
         TenantCreator.create(
-            tenant=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_name, is_default=True),
+            tenant_info=TenantInfo(tenant_id=tenant_id, tenant_name=tenant_name, is_default=True),
             builtin_manager=BuiltinManagerInfo(username=admin_username, password=admin_password),
             builtin_ds_config=BuiltinManagementDataSourceConfig(send_password_notification=False),
             virtual_user=VirtualUserInfo(username="bk_admin"),

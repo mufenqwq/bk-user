@@ -260,14 +260,14 @@ class TenantCreator:
 
     @staticmethod
     def create(
-        tenant: TenantInfo,
+        tenant_info: TenantInfo,
         builtin_manager: BuiltinManagerInfo,
         builtin_ds_config: BuiltinManagementDataSourceConfig,
         virtual_user: VirtualUserInfo | None = None,
     ) -> Tenant:
         """创建租户的统一入口方法
 
-        :param tenant: 租户相关信息
+        :param tenant_info: 租户相关信息
         :param builtin_manager: 内置管理员信息
         :param builtin_ds_config: 内置数据源配置
         :param virtual_user: 虚拟用户相关信息
@@ -278,7 +278,7 @@ class TenantCreator:
 
         with transaction.atomic():
             # 阶段1：创建租户基础信息
-            tenant = TenantCreator.create_tenant_base(tenant)
+            tenant = TenantCreator.create_tenant_base(tenant_info)
 
             # 阶段2：初始化租户默认配置
             TenantCreator.create_tenant_default_settings(tenant)
