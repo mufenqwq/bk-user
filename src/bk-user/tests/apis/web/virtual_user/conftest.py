@@ -81,7 +81,7 @@ def _init_virtual_users(random_tenant, _init_tenant_users_depts, bare_virtual_da
         # 创建租户用户
         tenant_user = TenantUser.objects.create(
             id=username,
-            tenant_info=random_tenant,
+            tenant=random_tenant,
             data_source_user=data_source_user,
             data_source=bare_virtual_data_source,
         )
@@ -109,7 +109,7 @@ def _init_cross_tenant_user() -> None:
         full_name="cross_tenant_ds_user",
     )
     TenantUser.objects.create(
-        tenant_info=tenant,
+        tenant=tenant,
         data_source_user=ds_user,
         data_source=data_source,
         id="cross_tenant_user",
