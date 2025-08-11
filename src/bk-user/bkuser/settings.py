@@ -758,6 +758,10 @@ HAS_BK_CMSI_APIGW = env.bool("HAS_BK_CMSI_APIGW", default=False)
 BK_CMSI_APIGW_STAGE = env.str("BK_CMSI_APIGW_STAGE", "prod")
 # 是否启用协同租户功能
 ENABLE_COLLABORATION_TENANT = env.bool("ENABLE_COLLABORATION_TENANT", default=False)
+# 内置租户管理员 username
+INITIAL_ADMIN_USERNAME = env.str("INITIAL_ADMIN_USERNAME", "admin")
+# 内置租户管理员密码
+INITIAL_ADMIN_PASSWORD = env.str("INITIAL_ADMIN_PASSWORD", "")
 
 # logo 文件大小限制，单位为：KB
 MAX_LOGO_SIZE = env.int("MAX_LOGO_SIZE", 256)
