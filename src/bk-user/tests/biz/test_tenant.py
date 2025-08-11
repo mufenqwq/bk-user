@@ -25,7 +25,7 @@ from bkuser.apps.tenant.models import (
     TenantUserDisplayNameExpressionConfig,
     TenantUserValidityPeriodConfig,
 )
-from bkuser.biz.tenant import TenantCreator, TenantInfo
+from bkuser.biz.tenant import BuiltinManagerInfo, TenantCreator, TenantInfo
 from bkuser.plugins.constants import DataSourcePluginEnum
 
 pytestmark = pytest.mark.django_db
@@ -62,14 +62,14 @@ class TestTenantCreator:
 
     def test_create_simple_builtin_data_source(self):
         """测试创建简单的内建管理数据源"""
-        data_source = TenantCreator.create_builtin_data_source("test-tenant")
+        data_source = TenantCreator.create_builtin_management_data_source("test-tenant")
 
         assert data_source.type == DataSourceTypeEnum.BUILTIN_MANAGEMENT
         assert data_source.owner_tenant_id == "test-tenant"
 
     def test_create_complex_builtin_data_source(self):
         """测试创建复杂的内建管理数据源"""
-        data_source = TenantCreator.create_builtin_data_source(
+        data_source = TenantCreator.create_builtin_management_data_source(
             "test-tenant", fixed_password="Passwd-123456!", notification_methods=["email"]
         )
 
@@ -87,16 +87,18 @@ class TestTenantCreator:
         """测试创建内置管理员"""
         tenant = Tenant.objects.create(id="test-tenant", name="Test Tenant")
 
-        data_source = TenantCreator.create_builtin_data_source(tenant.id)
+        data_source = TenantCreator.create_builtin_management_data_source(tenant.id)
 
         tenant_user = TenantCreator.create_builtin_manager(
             tenant=tenant,
             data_source=data_source,
-            username="admin",
-            password="Passwd-123456!",
-            email="admin@test.com",
-            phone="13800138000",
-            phone_country_code="86",
+            built_manager=BuiltinManagerInfo(
+                username="admin",
+                password="Passwd-123456!",
+                email="admin@test.com",
+                phone="13800138000",
+                phone_country_code="86",
+            ),
         )
 
         assert tenant_user.tenant == tenant
@@ -140,7 +142,7 @@ class TestTenantCreator:
 
     def test_create_builtin_idp(self):
         """测试创建内置认证源"""
-        data_source = TenantCreator.create_builtin_data_source("test-tenant")
+        data_source = TenantCreator.create_builtin_management_data_source("test-tenant")
 
         idp = TenantCreator.create_builtin_idp("test-tenant", data_source.id)
 

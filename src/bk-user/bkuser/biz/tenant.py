@@ -131,7 +131,7 @@ class TenantCreator:
         )
 
     @staticmethod
-    def create_builtin_data_source(
+    def create_builtin_management_data_source(
         tenant_id: str,
         enable_password: bool = True,
         fixed_password: str = "",
@@ -187,33 +187,29 @@ class TenantCreator:
     def create_builtin_manager(
         tenant: Tenant,
         data_source: DataSource,
-        username: str,
-        password: str,
-        email: str = "",
-        phone: str = "",
-        phone_country_code: str = "",
+        built_manager: BuiltinManagerInfo,
     ) -> TenantUser:
         """创建内置管理员"""
         # 创建数据源用户
         data_source_user = DataSourceUser.objects.create(
             data_source=data_source,
-            code=username,
-            username=username,
-            full_name=username,
-            email=email,
-            phone=phone,
-            phone_country_code=phone_country_code,
+            code=built_manager.username,
+            username=built_manager.username,
+            full_name=built_manager.username,
+            email=built_manager.email,
+            phone=built_manager.phone,
+            phone_country_code=built_manager.phone_country_code,
         )
 
         # 创建本地身份信息
-        if password:
+        if built_manager.password:
             LocalDataSourceIdentityInfo.objects.create(
                 user=data_source_user,
-                password=make_password(password),
+                password=make_password(built_manager.password),
                 password_updated_at=timezone.now(),
                 password_expired_at=PERMANENT_TIME,
                 data_source=data_source,
-                username=username,
+                username=built_manager.username,
             )
 
         # 创建租户用户
@@ -284,7 +280,7 @@ class TenantCreator:
             TenantCreator.create_tenant_default_settings(tenant)
 
             # 阶段3：创建内置管理数据源
-            data_source = TenantCreator.create_builtin_data_source(
+            data_source = TenantCreator.create_builtin_management_data_source(
                 tenant.id,
                 enable_password=True,
                 fixed_password=builtin_ds_config.fixed_password,
@@ -300,11 +296,7 @@ class TenantCreator:
             TenantCreator.create_builtin_manager(
                 tenant=tenant,
                 data_source=data_source,
-                username=builtin_manager.username,
-                password=builtin_manager.password,
-                email=builtin_manager.email,
-                phone=builtin_manager.phone,
-                phone_country_code=builtin_manager.phone_country_code,
+                built_manager=builtin_manager,
             )
 
             # 阶段6：创建内置虚拟用户
