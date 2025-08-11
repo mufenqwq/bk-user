@@ -80,6 +80,7 @@ class Command(BaseCommand):
             builtin_ds_policy=BuiltinDataSourceInitPolicy(send_password_notification=False),
             virtual_user_policy=VirtualUserPolicy(create=False),
         )
+        # 创建租户
         tenant = TenantCreate.create_tenant(plan)
 
         # 创建租户成功提示

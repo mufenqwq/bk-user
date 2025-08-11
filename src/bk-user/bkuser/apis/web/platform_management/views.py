@@ -119,6 +119,7 @@ class TenantListCreateApi(generics.ListCreateAPIView):
             virtual_user_policy=VirtualUserPolicy(create=False),
         )
 
+        # 创建租户
         tenant = TenantCreate.create_tenant(plan)
 
         # 对租户内置管理员进行账密信息初始化 & 发送密码通知
