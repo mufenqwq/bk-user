@@ -39,6 +39,11 @@ urlpatterns = [
                     views.TenantRelatedResourceStatsApi.as_view(),
                     name="tenant.related_resource_stats",
                 ),
+                path(
+                    "<str:id>/password-rule/",
+                    views.TenantPasswordRuleRetrieveApi.as_view(),
+                    name="tenant.password_rule",
+                ),
             ]
         ),
     ),

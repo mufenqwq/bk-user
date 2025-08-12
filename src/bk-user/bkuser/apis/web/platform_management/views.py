@@ -52,6 +52,8 @@ from bkuser.biz.tenant import (
 )
 from bkuser.common.error_codes import error_codes
 from bkuser.common.views import ExcludePatchAPIViewMixin
+from bkuser.plugins.base import get_default_plugin_cfg
+from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.local.constants import NotificationMethod
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
@@ -61,6 +63,7 @@ from .serializers import (
     TenantCreateInputSLZ,
     TenantCreateOutputSLZ,
     TenantListOutputSLZ,
+    TenantPasswordRuleRetrieveOutputSLZ,
     TenantRelatedResourceStatsOutputSLZ,
     TenantRetrieveOutputSLZ,
     TenantStatusUpdateOutputSLZ,
@@ -305,7 +308,7 @@ class TenantBuiltinManagerRetrieveUpdateApi(ExcludePatchAPIViewMixin, generics.U
 
         # 修改数据源配置
         # Note: plugin_config.password_initial.fixed_password 没必要修改，
-        #  直接修改管理账号密码即可，第一次创建时为了发送, 修改时不需要调整了
+        #  直接修改管理账号密码即可，第一次创建时为了发送，修改时不需要调整了
         plugin_config.password_initial.notification.enabled_methods = [
             NotificationMethod(n) for n in data["notification_methods"]
         ]
@@ -387,3 +390,21 @@ class TenantRelatedResourceStatsApi(generics.RetrieveAPIView):
             "shared_to_user_count": shared_to_users.count(),
         }
         return Response(TenantRelatedResourceStatsOutputSLZ(resources).data)
+
+
+class TenantPasswordRuleRetrieveApi(generics.RetrieveAPIView):
+    """获取租户密码规则"""
+
+    permission_classes = [IsAuthenticated, perm_class(PermAction.MANAGE_PLATFORM)]
+    lookup_url_kwarg = "id"
+
+    @swagger_auto_schema(
+        tags=["platform_management.tenant"],
+        operation_description="获取租户密码规则提示",
+        responses={status.HTTP_200_OK: TenantPasswordRuleRetrieveOutputSLZ()},
+    )
+    def get(self, request, *args, **kwargs):
+        cfg: LocalDataSourcePluginConfig = get_default_plugin_cfg(DataSourcePluginEnum.LOCAL)  # type: ignore
+        password_rule = cfg.password_rule.to_rule()  # type: ignore
+
+        return Response(TenantPasswordRuleRetrieveOutputSLZ(password_rule).data)
