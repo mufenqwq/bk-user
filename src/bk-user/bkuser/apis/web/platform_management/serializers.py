@@ -27,6 +27,7 @@ from bkuser.apps.tenant.constants import TENANT_ID_REGEX, TenantStatus
 from bkuser.apps.tenant.models import Tenant
 from bkuser.biz.validators import validate_duplicate_tenant_name, validate_logo, validate_user_new_password
 from bkuser.common.passwd import PasswordValidator
+from bkuser.common.serializers import PasswordRuleSerializer
 from bkuser.common.validators import validate_phone_with_country_code
 from bkuser.plugins.base import get_default_plugin_cfg
 from bkuser.plugins.constants import DataSourcePluginEnum
@@ -85,10 +86,10 @@ class TenantCreateInputSLZ(serializers.Serializer):
         validators=[validate_logo],
     )
     status = serializers.ChoiceField(help_text="租户状态", choices=TenantStatus.get_choices())
-    # [内置管理]类型的本地数据源配置
+    # [内置管理] 类型的本地数据源配置
     fixed_password = serializers.CharField(help_text="固定初始密码")
     notification_methods = serializers.ListField(
-        help_text="通知方式(支持多选或不选)",
+        help_text="通知方式 (支持多选或不选)",
         child=serializers.ChoiceField(help_text="通知方式", choices=NotificationMethod.get_choices()),
         required=False,
         default=[],
@@ -108,7 +109,7 @@ class TenantCreateInputSLZ(serializers.Serializer):
         if not re.fullmatch(TENANT_ID_REGEX, id):
             raise ValidationError(
                 _(
-                    "{} 不符合 租户 ID 的命名规范: 由3-32位小写字母、数字、连接符(-)字符组成，以小写字母开头，小写字母或数字结尾，不支持出现两个连续的连接符(--)",  # noqa: E501
+                    "{} 不符合 租户 ID 的命名规范：由 3-32 位小写字母、数字、连接符 (-) 字符组成，以小写字母开头，小写字母或数字结尾，不支持出现两个连续的连接符 (--)",  # noqa: E501
                 ).format(id),
             )
 
@@ -197,10 +198,10 @@ class TenantRelatedResourceStatsOutputSLZ(serializers.Serializer):
 
 
 class TenantBuiltinManagerUpdateInputSLZ(serializers.Serializer):
-    # [内置管理]类型的本地数据源配置
+    # [内置管理] 类型的本地数据源配置
     fixed_password = serializers.CharField(help_text="固定初始密码")
     notification_methods = serializers.ListField(
-        help_text="通知方式(支持多选或不选)",
+        help_text="通知方式 (支持多选或不选)",
         child=serializers.ChoiceField(help_text="通知方式", choices=NotificationMethod.get_choices()),
         required=False,
         default=[],
@@ -234,20 +235,5 @@ class TenantBuiltinManagerUpdateInputSLZ(serializers.Serializer):
         return attrs
 
 
-class TenantPasswordRuleRetrieveOutputSLZ(serializers.Serializer):
-    # --- 长度限制类 ---
-    min_length = serializers.IntegerField(help_text="密码最小长度")
-    max_length = serializers.IntegerField(help_text="密码最大长度")
-    # --- 字符限制类 ---
-    contain_lowercase = serializers.BooleanField(help_text="必须包含小写字母")
-    contain_uppercase = serializers.BooleanField(help_text="必须包含大写字母")
-    contain_digit = serializers.BooleanField(help_text="必须包含数字")
-    contain_punctuation = serializers.BooleanField(help_text="必须包含特殊字符（标点符号）")
-    # --- 连续性限制类 ---
-    not_continuous_count = serializers.IntegerField(help_text="密码不允许连续 N 位出现")
-    not_keyboard_order = serializers.BooleanField(help_text="不允许键盘序")
-    not_continuous_letter = serializers.BooleanField(help_text="不允许连续字母序")
-    not_continuous_digit = serializers.BooleanField(help_text="不允许连续数字序")
-    not_repeated_symbol = serializers.BooleanField(help_text="重复字母，数字，特殊字符")
-    # --- 规则提示 ---
-    rule_tips = serializers.ListField(help_text="用户密码规则提示", child=serializers.CharField(), source="tips")
+class TenantPasswordRuleRetrieveOutputSLZ(PasswordRuleSerializer):
+    pass

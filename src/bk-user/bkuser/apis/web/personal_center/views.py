@@ -21,6 +21,7 @@ from typing import Dict
 from django.utils.translation import gettext_lazy as _
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -34,6 +35,7 @@ from bkuser.apis.web.personal_center.serializers import (
     TenantUserFieldOutputSLZ,
     TenantUserLanguageUpdateInputSLZ,
     TenantUserLogoUpdateInputSLZ,
+    TenantUserPasswordRuleRetrieveOutputSLZ,
     TenantUserPasswordUpdateInputSLZ,
     TenantUserPhoneUpdateInputSLZ,
     TenantUserPhoneVerificationCodeSendInputSLZ,
@@ -47,6 +49,7 @@ from bkuser.apps.tenant.models import TenantUser, TenantUserCustomField, UserBui
 from bkuser.biz.auditor import TenantUserPasswordResetAuditor, TenantUserPersonalInfoUpdateAuditor
 from bkuser.biz.natural_user import NatureUserHandler
 from bkuser.biz.organization import DataSourceUserHandler
+from bkuser.biz.password_rule import PasswordRuleService
 from bkuser.biz.senders import (
     EmailVerificationCodeSender,
     ExceedSendRateLimit,
@@ -559,3 +562,26 @@ class TenantUserPasswordUpdateApi(ExcludePatchAPIViewMixin, generics.UpdateAPIVi
         auditor.record(tenant_user.data_source_user, extras={"valid_days": plugin_config.password_expire.valid_time})
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class TenantUserPasswordRuleRetrieveApi(generics.RetrieveAPIView):
+    queryset = TenantUser.objects.all()
+    lookup_url_kwarg = "id"
+    permission_classes = [IsAuthenticated, perm_class(PermAction.USE_PLATFORM)]
+
+    @swagger_auto_schema(
+        tags=["personal_center"],
+        operation_description="获取租户用户密码规则提示",
+        responses={status.HTTP_200_OK: TenantUserPasswordRuleRetrieveOutputSLZ()},
+    )
+    def get(self, *args, **kwargs):
+        tenant_user = self.get_object()
+        data_source_user = tenant_user.data_source_user
+        data_source = data_source_user.data_source
+
+        try:
+            passwd_rule = PasswordRuleService.get_data_source_password_rule(data_source)
+        except ValidationError:
+            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("该租户用户没有可用的密码规则"))
+
+        return Response(TenantUserPasswordRuleRetrieveOutputSLZ(passwd_rule).data, status=status.HTTP_200_OK)

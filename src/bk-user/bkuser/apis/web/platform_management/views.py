@@ -44,6 +44,7 @@ from bkuser.apps.tenant.models import (
 from bkuser.biz.auditor import TenantAuditor
 from bkuser.biz.data_source import DataSourceHandler
 from bkuser.biz.organization import DataSourceUserHandler
+from bkuser.biz.password_rule import PasswordRuleService
 from bkuser.biz.tenant import (
     BuiltinManagementDataSourceConfig,
     BuiltinManagerInfo,
@@ -52,8 +53,6 @@ from bkuser.biz.tenant import (
 )
 from bkuser.common.error_codes import error_codes
 from bkuser.common.views import ExcludePatchAPIViewMixin
-from bkuser.plugins.base import get_default_plugin_cfg
-from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.local.constants import NotificationMethod
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
@@ -400,11 +399,9 @@ class TenantPasswordRuleRetrieveApi(generics.RetrieveAPIView):
 
     @swagger_auto_schema(
         tags=["platform_management.tenant"],
-        operation_description="获取租户密码规则提示",
+        operation_description="租户密码规则",
         responses={status.HTTP_200_OK: TenantPasswordRuleRetrieveOutputSLZ()},
     )
     def get(self, request, *args, **kwargs):
-        cfg: LocalDataSourcePluginConfig = get_default_plugin_cfg(DataSourcePluginEnum.LOCAL)  # type: ignore
-        password_rule = cfg.password_rule.to_rule()  # type: ignore
-
+        password_rule = PasswordRuleService.get_default_password_rule()
         return Response(TenantPasswordRuleRetrieveOutputSLZ(password_rule).data)

@@ -51,7 +51,7 @@ from bkuser.biz.validators import (
     validate_user_new_password,
 )
 from bkuser.common.constants import ALLOWED_DATETIME_MAX_OFFSET, PERMANENT_TIME, TIME_ZONE_CHOICES, BkLanguageEnum
-from bkuser.common.serializers import StringArrayField
+from bkuser.common.serializers import PasswordRuleSerializer, StringArrayField
 from bkuser.common.validators import validate_phone_with_country_code
 
 
@@ -386,23 +386,8 @@ class TenantUserAccountExpiredAtUpdateInputSLZ(serializers.Serializer):
         return expired_at
 
 
-class TenantUserPasswordRuleRetrieveOutputSLZ(serializers.Serializer):
-    # --- 长度限制类 ---
-    min_length = serializers.IntegerField(help_text="密码最小长度")
-    max_length = serializers.IntegerField(help_text="密码最大长度")
-    # --- 字符限制类 ---
-    contain_lowercase = serializers.BooleanField(help_text="必须包含小写字母")
-    contain_uppercase = serializers.BooleanField(help_text="必须包含大写字母")
-    contain_digit = serializers.BooleanField(help_text="必须包含数字")
-    contain_punctuation = serializers.BooleanField(help_text="必须包含特殊字符（标点符号）")
-    # --- 连续性限制类 ---
-    not_continuous_count = serializers.IntegerField(help_text="密码不允许连续 N 位出现")
-    not_keyboard_order = serializers.BooleanField(help_text="不允许键盘序")
-    not_continuous_letter = serializers.BooleanField(help_text="不允许连续字母序")
-    not_continuous_digit = serializers.BooleanField(help_text="不允许连续数字序")
-    not_repeated_symbol = serializers.BooleanField(help_text="重复字母，数字，特殊字符")
-    # --- 规则提示 ---
-    rule_tips = serializers.ListField(help_text="用户密码规则提示", child=serializers.CharField(), source="tips")
+class TenantUserPasswordRuleRetrieveOutputSLZ(PasswordRuleSerializer):
+    pass
 
 
 class TenantUserPasswordResetInputSLZ(serializers.Serializer):
@@ -488,7 +473,7 @@ class TenantUserBatchCreateInputSLZ(serializers.Serializer):
             # 注：raw_info 格式是以英文逗号 (,)、中文逗号 (，)、英文分号 (;) 或中文分号 (；)
             # 为分隔符的用户信息字符串，多选枚举以 / 拼接
             # 字段：username full_name email gender region hobbies
-            # 示例：kafka, 卡芙卡, kafka@starrail.com, 女, StarCoreHunter, 狩猎/阅读
+            # 示例：kafka, 卡芙卡，kafka@starrail.com, 女，StarCoreHunter, 狩猎/阅读
             data: List[str] = [s.strip() for s in re.split(r"[,，;；]", raw_info) if s.strip()]
             if len(data) != field_count:
                 raise ValidationError(

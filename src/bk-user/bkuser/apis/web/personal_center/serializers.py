@@ -36,6 +36,7 @@ from bkuser.biz.validators import validate_logo, validate_user_extras, validate_
 from bkuser.common.constants import TIME_ZONE_CHOICES, BkLanguageEnum
 from bkuser.common.desensitize import desensitize_email, desensitize_phone
 from bkuser.common.hashers import check_password
+from bkuser.common.serializers import PasswordRuleSerializer
 from bkuser.common.validators import validate_phone_with_country_code
 
 
@@ -273,6 +274,10 @@ class TenantUserPasswordUpdateInputSLZ(serializers.Serializer):
         )
 
         return attrs
+
+
+class TenantUserPasswordRuleRetrieveOutputSLZ(PasswordRuleSerializer):
+    pass
 
 
 class TenantUserPhoneVerificationCodeSendInputSLZ(serializers.Serializer):
