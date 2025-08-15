@@ -44,7 +44,7 @@ from bkuser.apps.tenant.models import (
 from bkuser.biz.auditor import TenantAuditor
 from bkuser.biz.data_source import DataSourceHandler
 from bkuser.biz.organization import DataSourceUserHandler
-from bkuser.biz.password_rule import PasswordRuleService
+from bkuser.biz.password_rule import PasswordRuleHandler
 from bkuser.biz.tenant import (
     BuiltinManagementDataSourceConfig,
     BuiltinManagerInfo,
@@ -404,5 +404,5 @@ class TenantPasswordRuleRetrieveApi(generics.RetrieveAPIView):
     )
     def get(self, request, *args, **kwargs):
         # Note: 平台管理员在创建租户的时候设置初始密码，其验证逻辑基于默认密码规则
-        password_rule = PasswordRuleService.get_default_password_rule()
+        password_rule = PasswordRuleHandler.get_default_password_rule()
         return Response(TenantPasswordRuleRetrieveOutputSLZ(password_rule).data)

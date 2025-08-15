@@ -18,7 +18,7 @@
 import pytest
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource
-from bkuser.biz.password_rule import PasswordRuleService
+from bkuser.biz.password_rule import PasswordRuleHandler
 from bkuser.common.passwd import PasswordRule
 from bkuser.plugins.base import get_default_plugin_cfg
 from bkuser.plugins.constants import DataSourcePluginEnum
@@ -33,7 +33,7 @@ class TestPasswordRuleService:
 
     def test_get_default_password_rule(self):
         """测试获取默认密码规则"""
-        password_rule = PasswordRuleService.get_default_password_rule()
+        password_rule = PasswordRuleHandler.get_default_password_rule()
 
         assert isinstance(password_rule, PasswordRule)
         assert password_rule.min_length == 12
@@ -45,7 +45,7 @@ class TestPasswordRuleService:
 
     def test_get_data_source_password_rule_success(self, full_local_data_source):
         """测试成功获取数据源密码规则"""
-        password_rule = PasswordRuleService.get_data_source_password_rule(full_local_data_source)
+        password_rule = PasswordRuleHandler.get_data_source_password_rule(full_local_data_source)
 
         assert isinstance(password_rule, PasswordRule)
         assert password_rule.min_length == 12
@@ -63,7 +63,7 @@ class TestPasswordRuleService:
         )
 
         with pytest.raises(ValidationError) as e:
-            PasswordRuleService.get_data_source_password_rule(data_source)
+            PasswordRuleHandler.get_data_source_password_rule(data_source)
 
         assert "仅支持本地实名数据源的密码规则获取" in str(e.value)
 
@@ -79,6 +79,6 @@ class TestPasswordRuleService:
         )
 
         with pytest.raises(ValidationError) as e:
-            PasswordRuleService.get_data_source_password_rule(data_source)
+            PasswordRuleHandler.get_data_source_password_rule(data_source)
 
         assert "该数据源未启用密码" in str(e.value)

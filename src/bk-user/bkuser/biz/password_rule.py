@@ -24,7 +24,7 @@ from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
 
-class PasswordRuleService:
+class PasswordRuleHandler:
     @staticmethod
     def get_default_password_rule() -> PasswordRule:
         cfg: LocalDataSourcePluginConfig = get_default_plugin_cfg(DataSourcePluginEnum.LOCAL)  # type: ignore

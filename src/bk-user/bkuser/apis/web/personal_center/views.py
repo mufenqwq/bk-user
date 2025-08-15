@@ -49,7 +49,7 @@ from bkuser.apps.tenant.models import TenantUser, TenantUserCustomField, UserBui
 from bkuser.biz.auditor import TenantUserPasswordResetAuditor, TenantUserPersonalInfoUpdateAuditor
 from bkuser.biz.natural_user import NatureUserHandler
 from bkuser.biz.organization import DataSourceUserHandler
-from bkuser.biz.password_rule import PasswordRuleService
+from bkuser.biz.password_rule import PasswordRuleHandler
 from bkuser.biz.senders import (
     EmailVerificationCodeSender,
     ExceedSendRateLimit,
@@ -580,7 +580,7 @@ class TenantUserPasswordRuleRetrieveApi(generics.RetrieveAPIView):
         data_source = data_source_user.data_source
 
         try:
-            passwd_rule = PasswordRuleService.get_data_source_password_rule(data_source)
+            passwd_rule = PasswordRuleHandler.get_data_source_password_rule(data_source)
         except ValidationError:
             raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("该租户用户没有可用的密码规则"))
 
