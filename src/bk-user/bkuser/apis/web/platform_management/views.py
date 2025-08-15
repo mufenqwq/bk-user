@@ -403,5 +403,6 @@ class TenantPasswordRuleRetrieveApi(generics.RetrieveAPIView):
         responses={status.HTTP_200_OK: TenantPasswordRuleRetrieveOutputSLZ()},
     )
     def get(self, request, *args, **kwargs):
+        # Note: 平台管理员在创建租户的时候设置初始密码，其验证逻辑基于默认密码规则
         password_rule = PasswordRuleService.get_default_password_rule()
         return Response(TenantPasswordRuleRetrieveOutputSLZ(password_rule).data)
