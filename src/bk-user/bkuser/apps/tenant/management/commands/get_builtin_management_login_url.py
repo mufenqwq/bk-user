@@ -41,7 +41,7 @@ class Command(BaseCommand):
                 raise ValueError("The --tenant_id is required in multi-tenant mode")
             tenant_id = provided_tenant_id
         else:
-            # 非多租户模式：忽略用户提供的 tenant_id，始终使用 DEFAULT
+            # 非多租户模式：始终使用 DEFAULT
             tenant_id = BuiltInTenantIDEnum.DEFAULT
 
         # 检查租户是否存在
