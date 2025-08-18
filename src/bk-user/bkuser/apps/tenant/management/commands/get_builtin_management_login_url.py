@@ -30,7 +30,7 @@ class Command(BaseCommand):
     """获取内置管理员登录地址"""
 
     def add_arguments(self, parser):
-        parser.add_argument("--tenant-id", type=str, help="Tenant ID")
+        parser.add_argument("--tenant_id", type=str, help="Tenant ID")
 
     @staticmethod
     def _check_tenant(tenant_id: str):
