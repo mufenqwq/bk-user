@@ -38,7 +38,7 @@ class Command(BaseCommand):
             raise ValueError(f"tenant {tenant_id} is not existed")
 
     def handle(self, *args, **options):
-        tenant_id = options.get("tenant-id")
+        tenant_id = options.get("tenant_id")
 
         # 兼容非多租户版本
         if not tenant_id:
