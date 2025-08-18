@@ -24,42 +24,46 @@ from bkuser.apps.idp.models import Idp
 from bkuser.apps.tenant.constants import BuiltInTenantIDEnum
 from bkuser.apps.tenant.models import Tenant
 from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
+from bkuser.utils.url import urljoin
 
 
 class Command(BaseCommand):
     """获取内置管理员登录地址"""
 
     def add_arguments(self, parser):
-        parser.add_argument("--tenant_id", type=str, help="Tenant ID")
+        parser.add_argument("--tenant_id", type=str, help="Tenant ID (required in multi-tenant mode)")
 
     @staticmethod
-    def _check_tenant(tenant_id: str):
+    def _check_and_get_tenant_id(provided_tenant_id: str | None) -> str:
+        if settings.ENABLE_MULTI_TENANT_MODE:
+            # 多租户模式：必须提供 tenant_id
+            if not provided_tenant_id:
+                raise ValueError("The --tenant_id is required in multi-tenant mode")
+            tenant_id = provided_tenant_id
+        else:
+            # 非多租户模式：忽略用户提供的 tenant_id，始终使用 DEFAULT
+            tenant_id = BuiltInTenantIDEnum.DEFAULT
+
+        # 检查租户是否存在
         if not Tenant.objects.filter(id=tenant_id).exists():
             raise ValueError(f"tenant {tenant_id} is not existed")
 
+        return tenant_id
+
     def handle(self, *args, **options):
-        tenant_id = options.get("tenant_id")
+        tenant_id = self._check_and_get_tenant_id(options.get("tenant_id"))
 
-        # 兼容非多租户版本
-        if not tenant_id:
-            tenant_id = (
-                BuiltInTenantIDEnum.SYSTEM if settings.ENABLE_MULTI_TENANT_MODE else BuiltInTenantIDEnum.DEFAULT
-            )
-
-        self._check_tenant(tenant_id)
-
-        builtin_management_ds = DataSource.objects.get(
+        data_source = DataSource.objects.get(
             owner_tenant_id=tenant_id,
             type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
         )
 
-        local_idp = Idp.objects.get(
+        idp = Idp.objects.get(
             owner_tenant_id=tenant_id,
             plugin_id=BuiltinIdpPluginEnum.LOCAL,
-            data_source_id=builtin_management_ds.id,
+            data_source_id=data_source.id,
         )
 
-        base_login_url = settings.BK_LOGIN_URL.rstrip("/")
-        login_url = f"{base_login_url}/builtin-management-auth/idps/{local_idp.id}/"
+        login_url = urljoin(settings.BK_LOGIN_URL, f"/builtin-management-auth/idps/{idp.id}/")
 
         self.stdout.write(login_url)
