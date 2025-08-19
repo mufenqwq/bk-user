@@ -41,7 +41,7 @@ class Command(BaseCommand):
 
         # 多租户模式：必须提供 tenant_id
         if not tenant_id:
-            raise ValueError("The tenant_id is required when multi-tenant mode enabled")
+            raise ValueError("the tenant_id is required when multi-tenant mode enabled")
 
         # 检查租户是否存在
         if not Tenant.objects.filter(id=tenant_id).exists():
