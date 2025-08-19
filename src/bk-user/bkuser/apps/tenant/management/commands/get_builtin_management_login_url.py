@@ -34,24 +34,26 @@ class Command(BaseCommand):
         parser.add_argument("--tenant_id", type=str, help="Tenant ID (required in multi-tenant mode)")
 
     @staticmethod
-    def _check_and_get_tenant_id(provided_tenant_id: str | None) -> str:
-        if settings.ENABLE_MULTI_TENANT_MODE:
-            # 多租户模式：必须提供 tenant_id
-            if not provided_tenant_id:
-                raise ValueError("The --tenant_id is required in multi-tenant mode")
-            tenant_id = provided_tenant_id
-        else:
-            # 非多租户模式：始终使用 DEFAULT
-            tenant_id = BuiltInTenantIDEnum.DEFAULT
+    def _check_tenant_id(tenant_id: str | None):
+        # 非多租户，无需校验，因为即使传入了，也不会使用到
+        if not settings.ENABLE_MULTI_TENANT_MODE:
+            return
+
+        # 多租户模式：必须提供 tenant_id
+        if not tenant_id:
+            raise ValueError("The tenant_id is required when multi-tenant mode enabled")
 
         # 检查租户是否存在
         if not Tenant.objects.filter(id=tenant_id).exists():
             raise ValueError(f"tenant {tenant_id} is not existed")
 
-        return tenant_id
-
     def handle(self, *args, **options):
-        tenant_id = self._check_and_get_tenant_id(options.get("tenant_id"))
+        tenant_id = options.get("tenant_id")
+        self._check_tenant_id(tenant_id)
+
+        # 非多租户模式：始终使用 DEFAULT
+        if not settings.ENABLE_MULTI_TENANT_MODE:
+            tenant_id = BuiltInTenantIDEnum.DEFAULT
 
         data_source = DataSource.objects.get(
             owner_tenant_id=tenant_id,
