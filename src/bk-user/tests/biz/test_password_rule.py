@@ -28,7 +28,7 @@ from rest_framework.exceptions import ValidationError
 pytestmark = pytest.mark.django_db
 
 
-class TestPasswordRuleService:
+class TestPasswordRuleHandler:
     """测试密码规则服务类"""
 
     def test_get_default_password_rule(self):
