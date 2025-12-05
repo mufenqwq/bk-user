@@ -39,9 +39,9 @@ class Command(BaseCommand):
     """
 
     # 保留时长，默认7天
-    RETENTION_DAYS = 7
+    retention_days = 7
     # 批量删除大小，默认 200
-    BATCH_SIZE = 200
+    batch_size = 200
 
     help = "清理无效的 bk_token 数据"
 
@@ -50,8 +50,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--retention-days",
             type=int,
-            default=self.RETENTION_DAYS,
-            help=f"额外保留时长（天），默认：{self.RETENTION_DAYS}",
+            default=self.retention_days,
+            help=f"额外保留时长（天），默认：{self.retention_days}",
         )
 
     def handle(self, *args, **options):
@@ -66,12 +66,12 @@ class Command(BaseCommand):
             logger.info("cleanup_invalid_token dry run, %d tokens to delete", total_count)
             return
 
-        batch_count = math.ceil(total_count / self.BATCH_SIZE)
+        batch_count = math.ceil(total_count / self.batch_size)
 
         # 分批删除
         for _ in range(batch_count):
             ids_to_delete = list(
-                BkToken.objects.filter(created_at__lt=threshold_time).values_list("id", flat=True)[: self.BATCH_SIZE]
+                BkToken.objects.filter(created_at__lt=threshold_time).values_list("id", flat=True)[: self.batch_size]
             )
             BkToken.objects.filter(id__in=ids_to_delete).delete()
 
