@@ -38,7 +38,7 @@ class Command(BaseCommand):
     - retention_days: 额外保留时间，便于问题排查
     """
 
-    # 保留时长，默认7天
+    # 保留时长，默认 7 天
     retention_days = 7
     # 批量删除大小，默认 200
     batch_size = 200
@@ -55,7 +55,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        # 清理阈值：cookie_age * 2 （兜底） + retention_days (保留时间)
+        # 清理阈值：cookie_age * 2（兜底） + retention_days (保留时间)
         threshold_seconds = settings.BK_TOKEN_COOKIE_AGE * 2 + options["retention_days"] * 24 * 3600
         threshold_time = timezone.now() - timedelta(seconds=threshold_seconds)
 
@@ -75,7 +75,7 @@ class Command(BaseCommand):
             )
             BkToken.objects.filter(id__in=ids_to_delete).delete()
 
-            # 每批删除后休眠 1s,避免对数据库造成过大压力
+            # 每批删除后休眠 1s，避免对数据库造成过大压力
             time.sleep(1)
 
-        logger.info("cleanup_invalid_token completed, deleted %d tokens", total_count)
+        self.stdout.write("cleanup_invalid_token completed, deleted %d tokens", total_count)
