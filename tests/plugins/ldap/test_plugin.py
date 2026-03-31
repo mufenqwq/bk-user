@@ -16,6 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
+
 from bkuser.plugins.ldap.plugin import LDAPDataSourcePlugin
 from bkuser.plugins.models import RawDataSourceDepartment, RawDataSourceUser
 

@@ -17,12 +17,13 @@
 from unittest import mock
 
 import pytest
-from bkuser.apps.data_source.constants import DataSourceTypeEnum
-from bkuser.apps.tenant.constants import TenantUserStatus
-from bkuser.apps.tenant.models import TenantUser, TenantUserDisplayNameExpressionConfig
 from django.conf import settings
 from django.urls import reverse
 from rest_framework import status
+
+from bkuser.apps.data_source.constants import DataSourceTypeEnum
+from bkuser.apps.tenant.constants import TenantUserStatus
+from bkuser.apps.tenant.models import TenantUser, TenantUserDisplayNameExpressionConfig
 
 pytestmark = pytest.mark.django_db
 

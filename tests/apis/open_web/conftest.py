@@ -19,6 +19,9 @@ from typing import Dict
 from unittest import mock
 
 import pytest
+from django.test.utils import override_settings
+from rest_framework.test import APIClient
+
 from bkuser.apis.open_web.mixins import OpenWebApiCommonMixin
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource, DataSourceUser
@@ -32,9 +35,6 @@ from bkuser.apps.tenant.models import (
 )
 from bkuser.auth.models import User
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
-from django.test.utils import override_settings
-from rest_framework.test import APIClient
-
 from tests.test_utils.data_source import init_data_source_users_depts_and_relations
 from tests.test_utils.helpers import generate_random_string
 from tests.test_utils.tenant import create_tenant, sync_users_depts_to_tenant

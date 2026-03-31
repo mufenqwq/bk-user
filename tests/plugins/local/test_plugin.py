@@ -16,6 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
+
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 from bkuser.plugins.local.plugin import LocalDataSourcePlugin
 

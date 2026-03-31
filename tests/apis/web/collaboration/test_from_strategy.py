@@ -15,6 +15,9 @@
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
 import pytest
+from django.urls import reverse
+from rest_framework import status
+
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.sync.constants import SyncTaskTrigger
@@ -23,9 +26,6 @@ from bkuser.apps.sync.managers import TenantSyncManager
 from bkuser.apps.tenant.constants import CollaborationStrategyStatus
 from bkuser.apps.tenant.models import TenantUserCustomField
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
-from django.urls import reverse
-from rest_framework import status
-
 from tests.test_utils.data_source import init_data_source_users_depts_and_relations
 
 pytestmark = pytest.mark.django_db

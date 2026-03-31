@@ -18,6 +18,12 @@
 from urllib.parse import urlencode
 
 import pytest
+from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test.utils import override_settings
+from django.urls import reverse
+from rest_framework import status
+
 from bkuser.apps.data_source.constants import DataSourceTypeEnum, FieldMappingOperation
 from bkuser.apps.data_source.models import DataSource, DataSourceDepartment, DataSourceSensitiveInfo, DataSourceUser
 from bkuser.apps.idp.constants import INVALID_REAL_DATA_SOURCE_ID, IdpStatus
@@ -26,12 +32,6 @@ from bkuser.apps.sync.constants import SyncTaskStatus
 from bkuser.apps.sync.models import DataSourceSyncTask
 from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.local.constants import PasswordGenerateMethod
-from django.conf import settings
-from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test.utils import override_settings
-from django.urls import reverse
-from rest_framework import status
-
 from tests.test_utils.tenant import sync_users_depts_to_tenant
 
 pytestmark = pytest.mark.django_db

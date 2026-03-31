@@ -16,11 +16,12 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
+from django.db.models.signals import post_save
+from django_celery_beat.models import PeriodicTask
+
 from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.sync.handlers import set_data_source_sync_periodic_task
 from bkuser.apps.sync.names import gen_data_source_sync_periodic_task_name
-from django.db.models.signals import post_save
-from django_celery_beat.models import PeriodicTask
 
 pytestmark = pytest.mark.django_db
 

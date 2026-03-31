@@ -16,6 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
+
 from bkuser.apps.sync.constants import SyncTaskStatus
 from bkuser.apps.sync.runners import TenantSyncTaskRunner
 from bkuser.apps.tenant.models import TenantDepartment, TenantUser

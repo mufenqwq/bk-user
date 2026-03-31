@@ -181,25 +181,13 @@ class DataSourceCreateInputSLZ(serializers.Serializer):
         ):
             raise ValidationError(_("当前租户已存在外部数据源"))
 
-        # TODO: 在这里校验合适吗
-        # 同租户下不同数据源的用户名前后缀不能相同，(策略为 ADD_AFFIX 时)
         username_config = attrs.get("username_config", {})
         if username_config.get("strategy") == UsernameConfigStrategy.ADD_AFFIX:
-            prefix = username_config.get("prefix")
-            suffix = username_config.get("suffix")
-            existing_data_sources = DataSource.objects.filter(
-                owner_tenant_id=tenant_id, type=DataSourceTypeEnum.REAL
+            DataSource.objects.check_username_affix_unique(
+                tenant_id=tenant_id,
+                prefix=username_config.get("prefix", ""),
+                suffix=username_config.get("suffix", ""),
             )
-            # FIXME: 这个逻辑是合理的吗？为什么要在这里校验???
-            for ds in existing_data_sources:
-                ds_username_config = ds.username_config or {}
-                if ds_username_config.get("strategy") != UsernameConfigStrategy.ADD_AFFIX:
-                    continue
-                ds_prefix = ds_username_config.get("prefix", "")
-                ds_suffix = ds_username_config.get("suffix", "")
-                if prefix == ds_prefix and suffix == ds_suffix:
-                    raise ValidationError(_("当前租户已存在相同用户名前后缀的数据源"))
-
 
         # 除本地数据源类型外，都需要配置字段映射
         if plugin_id != DataSourcePluginEnum.LOCAL:
