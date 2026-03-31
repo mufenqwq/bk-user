@@ -1,0 +1,891 @@
+# -*- coding: utf-8 -*-
+# TencentBlueKing is pleased to support the open source community by making
+# 蓝鲸智云 - 用户管理 (bk-user) available.
+# Copyright (C) 2017 Tencent. All rights reserved.
+# Licensed under the MIT License (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#     http://opensource.org/licenses/MIT
+#
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+# either express or implied. See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# We undertake not to change the open source license (MIT license) applicable
+# to the current version of the project delivered to anyone in the future.
+
+import hashlib
+import re
+import ssl
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
+import environ
+import pymysql
+import urllib3
+from celery.schedules import crontab
+from django.db.backends.mysql.features import DatabaseFeatures
+from django.utils.encoding import force_bytes
+from django.utils.functional import cached_property
+
+pymysql.install_as_MySQLdb()
+
+# environ
+env = environ.Env()
+# load environment variables from .env file
+environ.Env.read_env()
+
+# no more useless warning
+urllib3.disable_warnings()
+
+
+# 定义一个补丁来兼容 MySQL 5.7
+class PatchFeatures:
+    @cached_property
+    def minimum_database_version(self):
+        if self.connection.mysql_is_mariadb:  # type: ignore[attr-defined]
+            return 10, 4
+        return 5, 7
+
+
+# 将补丁应用到 DatabaseFeatures 中
+DatabaseFeatures.minimum_database_version = PatchFeatures.minimum_database_version
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = env.bool("DEBUG", False)
+
+ALLOWED_HOSTS = ["*"]
+
+# Application definition
+INSTALLED_APPS = [
+    "modeltranslation",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "rest_framework",
+    "corsheaders",
+    "django_celery_beat",
+    "django_celery_results",
+    "django_prometheus",
+    "drf_yasg",
+    "bkuser.auth",
+    "apigw_manager.apigw",
+    "bkuser.apps.audit",
+    "bkuser.apps.data_source",
+    "bkuser.apps.tenant",
+    "bkuser.apps.sync",
+    "bkuser.apps.idp",
+    "bkuser.apps.natural_user",
+    "bkuser.apps.permission",
+    "bkuser.apps.notification",
+]
+
+MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
+    "bkuser.common.middlewares.RequestProvider",
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "bkuser.auth.middlewares.LoginMiddleware",
+    "bkuser.apis.open_web.middlewares.TenantIDHeaderMiddleware",
+    "bkuser.apis.open_web.middlewares.OpenWebApiAuditMiddleware",
+    "bkuser.common.middlewares.TimeZoneMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
+]
+
+ROOT_URLCONF = "bkuser.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "bkuser.wsgi.application"
+
+# Database
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.mysql",
+        "NAME": env.str("MYSQL_NAME", "bk-user"),
+        "USER": env.str("MYSQL_USER", "root"),
+        "PASSWORD": env.str("MYSQL_PASSWORD", ""),
+        "HOST": env.str("MYSQL_HOST", "localhost"),
+        "PORT": env.int("MYSQL_PORT", 3306),
+        "TEST": {
+            "CHARSET": "utf8mb4",
+        },
+    },
+}
+
+# Database tls
+MYSQL_TLS_ENABLED = env.bool("MYSQL_TLS_ENABLED", False)
+MYSQL_TLS_CERT_CA_FILE = env.str("MYSQL_TLS_CERT_CA_FILE", "")
+MYSQL_TLS_CERT_FILE = env.str("MYSQL_TLS_CERT_FILE", "")
+MYSQL_TLS_CERT_KEY_FILE = env.str("MYSQL_TLS_CERT_KEY_FILE", "")
+MYSQL_TLS_CHECK_HOSTNAME = env.bool("MYSQL_TLS_CHECK_HOSTNAME", True)
+if MYSQL_TLS_ENABLED:
+    default_ssl_options = {
+        "ca": MYSQL_TLS_CERT_CA_FILE,
+        "check_hostname": MYSQL_TLS_CHECK_HOSTNAME,
+    }
+    # mTLS
+    if MYSQL_TLS_CERT_FILE and MYSQL_TLS_CERT_KEY_FILE:
+        default_ssl_options["cert"] = MYSQL_TLS_CERT_FILE
+        default_ssl_options["key"] = MYSQL_TLS_CERT_KEY_FILE
+
+    if "OPTIONS" not in DATABASES["default"]:
+        DATABASES["default"]["OPTIONS"] = {}
+
+    DATABASES["default"]["OPTIONS"]["ssl"] = default_ssl_options
+
+# Default primary key field type
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Auth
+AUTHENTICATION_BACKENDS = [
+    "bkuser.auth.backends.TokenBackend",
+    "apigw_manager.apigw.authentication.UserModelBackend",
+]
+AUTH_USER_MODEL = "bkuser_auth.User"
+
+# Internationalization
+LANGUAGE_CODE = "zh-cn"
+LANGUAGES = (("zh-cn", "中文"), ("en-us", "English"))
+LANGUAGE_COOKIE_NAME = "blueking_language"
+LOCALE_PATHS = [BASE_DIR / "locale"]
+USE_I18N = True
+USE_L10N = True
+USE_TZ = True
+TIME_ZONE = "Asia/Shanghai"
+
+# DB 数据国际化翻译配置
+MODELTRANSLATION_DEFAULT_LANGUAGE = "zh-cn"
+MODELTRANSLATION_LANGUAGES = ("zh-cn", "en-us")
+MODELTRANSLATION_AUTO_POPULATE = True
+
+# SITE
+SITE_URL = env.str("SITE_URL", default="/")
+# Static files (CSS, JavaScript, Images)
+STATIC_ROOT = BASE_DIR / "staticfiles"
+WHITENOISE_STATIC_PREFIX = "/staticfiles/"
+# STATIC_URL 也可以是 CDN 地址
+STATIC_URL = env.str("STATIC_URL", SITE_URL + "staticfiles/")
+# Media files (excel, pdf, ...)
+MEDIA_ROOT = BASE_DIR / "media"
+
+# cookie
+SESSION_COOKIE_NAME = "bkuser_sessionid"
+SESSION_COOKIE_AGE = 60 * 60 * 24  # 1 天
+
+# rest_framework
+REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "bkuser.common.views.custom_exception_handler",
+    "DEFAULT_PAGINATION_CLASS": "bkuser.common.pagination.CustomPageNumberPagination",
+    "PAGE_SIZE": 10,
+    "TEST_REQUEST_DEFAULT_FORMAT": "json",
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["bkuser.common.renderers.BkStandardApiJSONRenderer"],
+    "DATETIME_FORMAT": "%Y-%m-%d %H:%M:%S %z",
+}
+# 单页最大返回条数
+MAX_PAGE_SIZE = env.int("MAX_PAGE_SIZE", 500)
+
+SWAGGER_ENABLE = env.bool("SWAGGER_ENABLE", default=False)
+SWAGGER_SETTINGS = {
+    "DEFAULT_AUTO_SCHEMA_CLASS": "bkuser.common.swagger.BkStandardResponseSwaggerAutoSchema",
+}
+
+# Requests pool config
+REQUESTS_POOL_CONNECTIONS = env.int("REQUESTS_POOL_CONNECTIONS", default=20)
+REQUESTS_POOL_MAXSIZE = env.int("REQUESTS_POOL_MAXSIZE", default=20)
+
+BK_APP_CODE = env.str("BK_APP_CODE", default="bkuser")
+BK_APP_SECRET = env.str("BK_APP_SECRET")
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = BK_APP_SECRET
+
+# bk_language domain
+BK_DOMAIN = env.str("BK_DOMAIN", default="")
+BK_DOMAIN_SCHEME = env.str("BK_DOMAIN_SCHEME", default="http")
+# BK USER URL
+BK_USER_URL = env.str("BK_USER_URL")
+AJAX_BASE_URL = env.str("AJAX_BASE_URL", SITE_URL)
+
+# csrf
+_BK_USER_URL_PARSE_URL = urlparse(BK_USER_URL)
+_BK_USER_HOSTNAME = _BK_USER_URL_PARSE_URL.hostname  # 去除端口的域名
+_BK_USER_NETLOC = _BK_USER_URL_PARSE_URL.netloc  # 若有端口，则会带上对应端口
+_BK_USER_IS_SPECIAL_PORT = _BK_USER_URL_PARSE_URL.port in [None, 80, 443]
+_BK_USER_SCHEME = _BK_USER_URL_PARSE_URL.scheme
+_BK_USER_URL_MD5_16BIT = hashlib.md5(BK_USER_URL.encode("utf-8")).hexdigest()[8:-8]
+# 注意：Cookie Domain 是不支持端口的
+SESSION_COOKIE_DOMAIN = _BK_USER_HOSTNAME
+CSRF_COOKIE_DOMAIN = SESSION_COOKIE_DOMAIN
+CSRF_COOKIE_NAME = f"bkuser_csrftoken_{_BK_USER_URL_MD5_16BIT}"
+# 对于特殊端口，带端口和不带端口都得添加，其他只需要添加默认原生的即可
+# Django 4.0 之后 CSRF_TRUSTED_ORIGINS 必须以 scheme (http:// 或 https://) 开头
+CSRF_TRUSTED_ORIGINS = (
+    [f"{_BK_USER_SCHEME}://{_BK_USER_HOSTNAME}", f"{_BK_USER_SCHEME}://{_BK_USER_NETLOC}"]
+    if _BK_USER_IS_SPECIAL_PORT
+    else [f"{_BK_USER_SCHEME}://{_BK_USER_NETLOC}"]
+)
+
+# cors
+CORS_ALLOW_CREDENTIALS = True  # 在 response 添加 Access-Control-Allow-Credentials, 即允许跨域使用 cookies
+CORS_ORIGIN_WHITELIST = CSRF_TRUSTED_ORIGINS
+# debug/联调测试时需要允许额外的域名跨域请求
+CORS_ORIGIN_ADDITIONAL_WHITELIST = env.list("CORS_ORIGIN_ADDITIONAL_WHITELIST", default=[])
+CORS_ORIGIN_WHITELIST.extend(CORS_ORIGIN_ADDITIONAL_WHITELIST)
+
+# Login
+BK_LOGIN_URL = env.str("BK_LOGIN_URL", default="/")
+# 登录小窗相关
+BK_LOGIN_PLAIN_URL = env.str("BK_LOGIN_PLAIN_URL", default=BK_LOGIN_URL.rstrip("/") + "/plain/")
+BK_LOGIN_PLAIN_WINDOW_WIDTH = env.int("BK_LOGIN_PLAIN_WINDOW_WIDTH", default=510)
+BK_LOGIN_PLAIN_WINDOW_HEIGHT = env.int("BK_LOGIN_PLAIN_WINDOW_HEIGHT", default=510)
+# 登录回调地址参数 Key
+BK_LOGIN_CALLBACK_URL_PARAM_KEY = env.str("BK_LOGIN_CALLBACK_URL_PARAM_KEY", default="c_url")
+# 登录 API URL
+BK_LOGIN_API_URL = env.str("BK_LOGIN_API_URL", default="http://bk-login/login/")
+
+# bk esb api url
+BK_COMPONENT_API_URL = env.str("BK_COMPONENT_API_URL")
+# bk apigw url tmpl
+BK_API_URL_TMPL = env.str("BK_API_URL_TMPL")
+BK_APP_TENANT_ID = env.str("BK_APP_TENANT_ID", default="system")
+BK_APIGW_NAME = env.str("BK_APIGW_NAME", default="bk-user")
+BK_USER_WEB_APIGW_STAGE = env.str("BK_USER_WEB_APIGW_STAGE", default="prod")
+# bk-user-web 网关跨域插件配置 allow_origins 和 allow_origins_by_regex
+# Note: allow_origins 和 allow_origins_by_regex 必须二选一，不能同时填写，否则将导致网关注册失败
+# 例如：BK_APIGW_CORS_ALLOW_ORIGINS=http://demo.example.com,https://demo.example.com
+# BK_APIGW_CORS_ALLOW_ORIGINS_BY_REGEX=^http://.*\.example\.com$,^https://.*\.example\.com$
+BK_APIGW_CORS_ALLOW_ORIGINS = env.str("BK_APIGW_CORS_ALLOW_ORIGINS", default="")
+BK_APIGW_CORS_ALLOW_ORIGINS_BY_REGEX = env.list(
+    "BK_APIGW_CORS_ALLOW_ORIGINS_BY_REGEX",
+    default=[
+        rf"^{BK_DOMAIN_SCHEME}://.*\.{re.escape(BK_DOMAIN)}$",
+        rf"^{BK_DOMAIN_SCHEME}://{re.escape(BK_DOMAIN)}$",
+    ],
+)
+# 与网关内部调用的认证 Token
+BK_APIGW_TO_BK_USER_INNER_BEARER_TOKEN = env.str("BK_APIGW_TO_BK_USER_INNER_BEARER_TOKEN", default="")
+# 是否自动同步网关
+ENABLE_SYNC_APIGW = env.bool("ENABLE_SYNC_APIGW", default=False)
+# 是否自动同步 Web 网关
+ENABLE_SYNC_WEB_APIGW = env.bool("ENABLE_SYNC_WEB_APIGW", default=False)
+
+# 版本日志
+VERSION_LOG_FILES_DIR = BASE_DIR / "version_log"
+# 前端 Console 展示构建的版本信息
+BK_BUILD_VERSION = env.str("BK_BUILD_VERSION", default="unset")
+# 文档链接
+BK_DOCS_URL_PREFIX = env.str("BK_DOCS_URL_PREFIX", default="https://bk.tencent.com/docs")
+BK_USER_DOC_URL = f"{BK_DOCS_URL_PREFIX}/markdown/UserManage/UserGuide/Introduce/README.md"
+# 反馈问题链接
+BK_USER_FEEDBACK_URL = env.str("BK_USER_FEEDBACK_URL", default="https://bk.tencent.com/s-mart/community/")
+# footer / logo / title 等全局配置存储的共享仓库地址
+BK_SHARED_RES_URL = env.str("BK_SHARED_RES_URL", default="")
+
+# ------------------------------------------ 缓存配置 ------------------------------------------
+
+REDIS_HOST = env.str("REDIS_HOST", "localhost")
+REDIS_PORT = env.int("REDIS_PORT", 6379)
+REDIS_PASSWORD = env.str("REDIS_PASSWORD", "")
+REDIS_MAX_CONNECTIONS = env.int("REDIS_MAX_CONNECTIONS", 100)
+REDIS_DB = env.int("REDIS_DB", 0)
+# redis tls
+REDIS_TLS_ENABLED = env.bool("REDIS_TLS_ENABLED", False)
+REDIS_TLS_CERT_CA_FILE = env.str("REDIS_TLS_CERT_CA_FILE", "")
+REDIS_TLS_CERT_FILE = env.str("REDIS_TLS_CERT_FILE", "")
+REDIS_TLS_CERT_KEY_FILE = env.str("REDIS_TLS_CERT_KEY_FILE", "")
+REDIS_TLS_CHECK_HOSTNAME = env.bool("REDIS_TLS_CHECK_HOSTNAME", True)
+# redis sentinel
+REDIS_USE_SENTINEL = env.bool("REDIS_USE_SENTINEL", False)
+REDIS_SENTINEL_MASTER_NAME = env.str("REDIS_SENTINEL_MASTER_NAME", "master")
+REDIS_SENTINEL_PASSWORD = env.str("REDIS_SENTINEL_PASSWORD", "")
+# env[REDIS_SENTINEL_ADDR] format: "host1:port1,host2:port2"
+# REDIS_SENTINEL_ADDR value: ["host1:port1", "host2:port2"]
+REDIS_SENTINEL_ADDR = env.list("REDIS_SENTINEL_ADDR", default=[])
+
+CACHES: Dict[str, Any] = {
+    # 默认缓存是本地内存，使用最近最少使用（LRU）的淘汰策略，使用 pickle 序列化数据
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        # 多个本地内存缓存时才需要设置
+        "LOCATION": "",
+        # 默认过期时间：30 min
+        "TIMEOUT": 60 * 30,
+        # 缓存的 Key 前缀
+        "KEY_PREFIX": "bkuser",
+        # 内存缓存特有参数
+        "OPTIONS": {
+            # 支持缓存的 key 最多数量，越大将会占用更多内存
+            "MAX_ENTRIES": 1000,
+            # 当达到 MAX_ENTRIES 时被淘汰的部分条目，淘汰率是 1 / CULL_FREQUENCY，默认淘汰 1/3 的缓存 key
+            "CULL_FREQUENCY": 3,
+        },
+    },
+    "redis": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        # 若需要支持主从配置，则 LOCATION 为 List[master_url, slave_url]
+        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}",
+        # 默认过期时间：30 min
+        "TIMEOUT": 60 * 30,
+        # 缓存的 Key 前缀
+        "KEY_PREFIX": "bkuser",
+        # 避免同缓存 Key 在不同 SaaS 版本之间存在差异导致读取的值非期望的
+        "VERSION": 3,
+        "OPTIONS": {
+            # Sentinel 模式 django_redis.client.SentinelClient (django-redis>=5.0.0)
+            # 单实例模式 django_redis.client.DefaultClient
+            # Note: django_redis.client.HerdClient 并不是 RedisCluster 的客户端，
+            #       而是削峰模式，通过分散缓存失效时间来减少同时构建缓存带来的负载峰值
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "PASSWORD": REDIS_PASSWORD,
+            # socket 建立连接超时设置，单位秒
+            "SOCKET_CONNECT_TIMEOUT": 5,
+            # 连接建立后的读写操作超时设置，单位秒
+            "SOCKET_TIMEOUT": 5,
+            "IGNORE_EXCEPTIONS": False,
+            # 默认使用 pickle 序列化数据，可选序列化方式有：pickle、json、msgpack
+            # "SERIALIZER": "django_redis.serializers.pickle.PickleSerializer"
+            # Redis 连接池配置
+            "CONNECTION_POOL_KWARGS": {
+                # redis-py 默认不会关闭连接，可能会造成连接过多，导致 Redis 无法服务，因此需要设置最大值连接数
+                "max_connections": REDIS_MAX_CONNECTIONS,
+                # redis-py will send SETINFO command, not valid for older version redis
+                "lib_name": None,
+                "lib_version": None,
+            },
+        },
+    },
+}
+
+# 当 Redis Cache 使用 IGNORE_EXCEPTIONS 时，设置指定的 logger 输出异常
+DJANGO_REDIS_LOGGER = "root"
+
+if REDIS_TLS_ENABLED:
+    CACHES["redis"]["LOCATION"] = f"rediss://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_KWARGS"]["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+    CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_KWARGS"]["ssl_ca_certs"] = REDIS_TLS_CERT_CA_FILE
+    CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_KWARGS"]["ssl_check_hostname"] = REDIS_TLS_CHECK_HOSTNAME
+    # mTLS
+    if REDIS_TLS_CERT_FILE and REDIS_TLS_CERT_KEY_FILE:
+        CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_KWARGS"]["ssl_certfile"] = REDIS_TLS_CERT_FILE
+        CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_KWARGS"]["ssl_keyfile"] = REDIS_TLS_CERT_KEY_FILE
+
+# redis sentinel
+if REDIS_USE_SENTINEL:
+    # Enable the alternate connection factory.
+    DJANGO_REDIS_CONNECTION_FACTORY = "django_redis.pool.SentinelConnectionFactory"
+    CACHES["redis"]["LOCATION"] = f"redis://{REDIS_SENTINEL_MASTER_NAME}/{REDIS_DB}"
+    CACHES["redis"]["OPTIONS"]["CLIENT_CLASS"] = "django_redis.client.SentinelClient"
+    # parse sentinel address from ["host1:port1", "host2:port2"] to [("host1", port1), ("host2", port2)]
+    CACHES["redis"]["OPTIONS"]["SENTINELS"] = [tuple(addr.split(":")) for addr in REDIS_SENTINEL_ADDR]
+    CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"] = {"password": REDIS_SENTINEL_PASSWORD, "socket_timeout": 5}
+    CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_CLASS"] = "redis.sentinel.SentinelConnectionPool"
+    # redis sentinel tls
+    if REDIS_TLS_ENABLED:
+        CACHES["redis"]["OPTIONS"]["CONNECTION_POOL_KWARGS"]["ssl"] = True
+        CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"]["ssl"] = True
+        CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"]["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+        CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"]["ssl_ca_certs"] = REDIS_TLS_CERT_CA_FILE
+        CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"]["ssl_check_hostname"] = REDIS_TLS_CHECK_HOSTNAME
+        # mTLS
+        if REDIS_TLS_CERT_FILE and REDIS_TLS_CERT_KEY_FILE:
+            CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"]["ssl_certfile"] = REDIS_TLS_CERT_FILE
+            CACHES["redis"]["OPTIONS"]["SENTINEL_KWARGS"]["ssl_keyfile"] = REDIS_TLS_CERT_KEY_FILE
+
+# ------------------------------------------ Celery 配置 ------------------------------------------
+
+# 连接 BROKER 超时时间
+CELERY_BROKER_CONNECTION_TIMEOUT = 1  # 单位秒
+# CELERY 与 RabbitMQ 增加 60 秒心跳设置项
+CELERY_BROKER_HEARTBEAT = 60
+# CELERY 并发数，默认为 2，可以通过环境变量或者 Procfile 设置
+CELERY_WORKER_CONCURRENCY = env.int("CELERY_WORKER_CONCURRENCY", default=2)
+# 与周期任务配置的定时相关 UTC
+CELERY_ENABLE_UTC = False
+# 任务结果存储
+CELERY_RESULT_BACKEND = "django-db"
+# close celery hijack root logger
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+# disable remote control
+CELERY_WORKER_ENABLE_REMOTE_CONTROL = False
+# Celery 消息序列化
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+# CELERY 配置，申明任务的文件路径，即包含有 @task 装饰器的函数文件
+# CELERY_IMPORTS = []
+# 内置的周期任务
+CELERY_BEAT_SCHEDULE = {
+    "periodic_notify_expiring_tenant_users": {
+        "task": "bkuser.apps.notification.tasks.build_and_run_notify_expiring_tenant_users_task",
+        "schedule": crontab(minute="0", hour="10"),
+    },
+    "periodic_notify_expired_tenant_users": {
+        "task": "bkuser.apps.notification.tasks.build_and_run_notify_expired_tenant_users_task",
+        "schedule": crontab(minute="0", hour="10"),
+    },
+    "periodic_notify_password_expiring_users": {
+        "task": "bkuser.apps.notification.tasks.build_and_run_notify_password_expiring_users_task",
+        "schedule": crontab(minute="30", hour="10"),
+    },
+    "periodic_notify_password_expired_users": {
+        "task": "bkuser.apps.notification.tasks.build_and_run_notify_password_expired_users_task",
+        "schedule": crontab(minute="30", hour="10"),
+    },
+    "mark_running_sync_task_as_failed_if_exceed_one_day": {
+        "task": "bkuser.apps.sync.periodic_tasks.mark_running_sync_task_as_failed_if_exceed_one_day",
+        "schedule": crontab(minute="0", hour="9"),
+    },
+    "periodic_update_tenant_user_status": {
+        "task": "bkuser.apps.tenant.tasks.update_expired_tenant_user_status",
+        "schedule": crontab(minute="0", hour="3"),
+    },
+}
+
+# 如果传入了 CELERY_BROKER_URL, 需要优先判断
+CELERY_BROKER_URL = env.str("CELERY_BROKER_URL", "")
+# celery tls
+CELERY_BROKER_TLS_ENABLED = env.bool("CELERY_BROKER_TLS_ENABLED", default=False)
+CELERY_BROKER_TLS_CERT_CA_FILE = env.str("CELERY_BROKER_TLS_CERT_CA_FILE", default="")
+CELERY_BROKER_TLS_CERT_FILE = env.str("CELERY_BROKER_TLS_CERT_FILE", default="")
+CELERY_BROKER_TLS_CERT_KEY_FILE = env.str("CELERY_BROKER_TLS_CERT_KEY_FILE", default="")
+# 直接提供 CELERY_BROKER_URL 时，仅支持 Rabbitmq 和 单例 Redis 开启 TLS，Sentinel Redis 暂不支持
+if CELERY_BROKER_URL and CELERY_BROKER_TLS_ENABLED:
+    ssl_key_prefix = "ssl_" if CELERY_BROKER_URL.startswith("redis") else ""
+    CELERY_BROKER_USE_SSL = {
+        f"{ssl_key_prefix}cert_reqs": ssl.CERT_REQUIRED,
+        f"{ssl_key_prefix}ca_certs": CELERY_BROKER_TLS_CERT_CA_FILE,
+    }
+    # mTLS
+    if CELERY_BROKER_TLS_CERT_FILE and CELERY_BROKER_TLS_CERT_KEY_FILE:
+        CELERY_BROKER_USE_SSL[f"{ssl_key_prefix}certfile"] = CELERY_BROKER_TLS_CERT_FILE
+        CELERY_BROKER_USE_SSL[f"{ssl_key_prefix}keyfile"] = CELERY_BROKER_TLS_CERT_KEY_FILE
+
+# rabbitmq as broker
+RABBITMQ_VHOST = env.str("RABBITMQ_VHOST", default="")
+RABBITMQ_PORT = env.str("RABBITMQ_PORT", default="")
+RABBITMQ_HOST = env.str("RABBITMQ_HOST", default="")
+RABBITMQ_USER = env.str("RABBITMQ_USER", default="")
+RABBITMQ_PASSWORD = env.str("RABBITMQ_PASSWORD", default="")
+# rabbitmq tls
+RABBITMQ_TLS_ENABLED = env.bool("RABBITMQ_TLS_ENABLED", default=False)
+RABBITMQ_TLS_CERT_CA_FILE = env.str("RABBITMQ_TLS_CERT_CA_FILE", default="")
+RABBITMQ_TLS_CERT_FILE = env.str("RABBITMQ_TLS_CERT_FILE", default="")
+RABBITMQ_TLS_CERT_KEY_FILE = env.str("RABBITMQ_TLS_CERT_KEY_FILE", default="")
+if not CELERY_BROKER_URL and all([RABBITMQ_VHOST, RABBITMQ_HOST, RABBITMQ_PORT, RABBITMQ_USER, RABBITMQ_PASSWORD]):
+    CELERY_BROKER_URL = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/{RABBITMQ_VHOST}"
+    if RABBITMQ_TLS_ENABLED:
+        CELERY_BROKER_URL = (
+            f"amqps://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/{RABBITMQ_VHOST}"
+        )
+        CELERY_BROKER_USE_SSL = {
+            "ca_certs": RABBITMQ_TLS_CERT_CA_FILE,
+            "cert_reqs": ssl.CERT_REQUIRED,
+        }
+        # mTLS
+        if RABBITMQ_TLS_CERT_FILE and RABBITMQ_TLS_CERT_KEY_FILE:
+            CELERY_BROKER_USE_SSL["certfile"] = RABBITMQ_TLS_CERT_FILE
+            CELERY_BROKER_USE_SSL["keyfile"] = RABBITMQ_TLS_CERT_KEY_FILE
+
+# default celery broker
+if not CELERY_BROKER_URL:
+    # use Redis as the default broker
+    CELERY_BROKER_URL = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+    if REDIS_TLS_ENABLED:
+        CELERY_BROKER_URL = f"rediss://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+        CELERY_BROKER_USE_SSL = {
+            "ssl_cert_reqs": ssl.CERT_REQUIRED,
+            "ssl_ca_certs": REDIS_TLS_CERT_CA_FILE,
+            "ssl_check_hostname": REDIS_TLS_CHECK_HOSTNAME,
+        }
+        # mTLS
+        if REDIS_TLS_CERT_FILE and REDIS_TLS_CERT_KEY_FILE:
+            CELERY_BROKER_USE_SSL["ssl_certfile"] = REDIS_TLS_CERT_FILE
+            CELERY_BROKER_USE_SSL["ssl_keyfile"] = REDIS_TLS_CERT_KEY_FILE
+
+    # https://docs.celeryq.dev/en/v5.3.1/getting-started/backends-and-brokers/redis.html#broker-redis
+    if REDIS_USE_SENTINEL:
+        CELERY_BROKER_URL = ";".join(
+            [f"sentinel://:{REDIS_PASSWORD}@{addr}/{REDIS_DB}" for addr in REDIS_SENTINEL_ADDR]
+        )
+        CELERY_BROKER_TRANSPORT_OPTIONS = {
+            "master_name": REDIS_SENTINEL_MASTER_NAME,
+            "sentinel_kwargs": {"password": REDIS_SENTINEL_PASSWORD},
+            "socket_timeout": 5,
+            "socket_connect_timeout": 5,
+            "socket_keepalive": True,
+        }
+        if REDIS_TLS_ENABLED:
+            # 用于与 Sentinel 节点之间的 TLS 通信
+            CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl"] = True
+            CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_ca_certs"] = REDIS_TLS_CERT_CA_FILE
+            CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+            CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_check_hostname"] = REDIS_TLS_CHECK_HOSTNAME
+            # mTLS
+            if REDIS_TLS_CERT_FILE and REDIS_TLS_CERT_KEY_FILE:
+                CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_certfile"] = REDIS_TLS_CERT_FILE
+                CELERY_BROKER_TRANSPORT_OPTIONS["sentinel_kwargs"]["ssl_keyfile"] = REDIS_TLS_CERT_KEY_FILE
+
+# ------------------------------------------ 日志配置 ------------------------------------------
+
+# 日志等级，高于或等于该等级的日志才会被记录
+LOG_LEVEL = env.str("LOG_LEVEL", default="ERROR")
+# 用于存放日志文件的目录，默认值为空，表示不使用任何文件，所有日志直接输出到控制台。
+# 可配置为有效目录，支持相对或绝对地址，比如："logs" 或 "/var/lib/app_logs/"。
+# 配置本选项后，原有的控制台日志输出将关闭。
+LOGGING_DIRECTORY = env.str("LOGGING_DIRECTORY", default=None)
+# 日志文件格式，可选值为：json/text
+LOGGING_FILE_FORMAT = env.str("LOGGING_FILE_FORMAT", default="json")
+
+if LOGGING_DIRECTORY is None:
+    logging_to_console = True
+    logging_directory = None
+else:
+    logging_to_console = False
+    # The dir allows both absolute and relative path, when it's relative, combine
+    # the value with project's base directory
+    logging_directory = Path(BASE_DIR) / Path(LOGGING_DIRECTORY)
+    logging_directory.mkdir(exist_ok=True)
+
+# 是否总是打印日志到控制台，默认关闭
+LOGGING_ALWAYS_CONSOLE = env.bool("LOGGING_ALWAYS_CONSOLE", default=False)
+if LOGGING_ALWAYS_CONSOLE:
+    logging_to_console = True
+
+
+def build_logging_config(log_level: str, to_console: bool, file_directory: Optional[Path], file_format: str) -> Dict:
+    """Build the global logging config dict.
+
+    :param log_level: The log level.
+    :param to_console: If True, output the logs to the console.
+    :param file_directory: If the value is not None, output the logs to the given directory.
+    :param file_format: The format of the logging file, "json" or "text".
+    :return: The logging config dict.
+    """
+
+    def _build_file_handler(log_path: Path, filename: str, format: str) -> Dict:
+        if format not in ("json", "text"):
+            raise ValueError(f"Invalid file_format: {file_format}")
+        formatter = "verbose_json" if format == "json" else "verbose"
+        return {
+            "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
+            "level": log_level,
+            "formatter": formatter,
+            "filters": ["request_id_filter"],
+            "filename": str(log_path / filename),
+            # Set max file size to 100MB
+            "maxBytes": 100 * 1024 * 1024,
+            "backupCount": 5,
+        }
+
+    handlers_config: Dict[str, Any] = {
+        "null": {"level": log_level, "class": "logging.NullHandler"},
+        "console": {
+            "level": log_level,
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+            "filters": ["request_id_filter"],
+        },
+    }
+    # 生成指定 Logger 对应的 Handlers
+    logger_handlers_map: Dict[str, List[str]] = {}
+    for logger_name in ["root", "component", "celery", "open_web_api_access"]:
+        handlers = []
+
+        if to_console:
+            handlers.append("console")
+
+        if file_directory:
+            # 生成 logger 对应日志文件的 Handler
+            handlers_config[logger_name] = _build_file_handler(
+                file_directory, f"{logger_name}-{file_format}.log", file_format
+            )
+            handlers.append(logger_name)
+
+        logger_handlers_map[logger_name] = handlers
+
+    return {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "filters": {
+            "request_id_filter": {"()": "bkuser.common.log.RequestIDFilter"},
+        },
+        "formatters": {
+            "verbose": {
+                "format": (
+                    "%(name)s %(levelname)s [%(asctime)s] %(pathname)s %(lineno)d %(funcName)s %(process)d %(thread)d "
+                    "\n \t%(request_id)s\t%(message)s \n"
+                ),
+                "datefmt": "%Y-%m-%d %H:%M:%S",
+            },
+            "verbose_json": {
+                "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+                "fmt": (
+                    "%(name)s %(levelname)s %(asctime)s %(pathname)s %(lineno)d "
+                    "%(funcName)s %(process)d %(thread)d %(request_id)s %(message)s"
+                ),
+            },
+            "simple": {"format": "%(name)s %(levelname)s %(message)s"},
+        },
+        "handlers": handlers_config,
+        # the root logger, 用于整个项目的默认 logger
+        "root": {"handlers": logger_handlers_map["root"], "level": log_level, "propagate": False},
+        "loggers": {
+            "django": {"handlers": ["null"], "level": "INFO", "propagate": True},
+            "django.server": {"handlers": logger_handlers_map["root"], "level": log_level, "propagate": False},
+            "django.request": {"handlers": logger_handlers_map["root"], "level": log_level, "propagate": False},
+            "open_web_api_access": {
+                "handlers": logger_handlers_map["open_web_api_access"],
+                "level": "INFO",
+                "propagate": False,
+            },
+            # 除 root 和 open_web_api_access 外的其他指定 Logger
+            **{
+                logger_name: {"handlers": handlers, "level": log_level, "propagate": False}
+                for logger_name, handlers in logger_handlers_map.items()
+                if logger_name not in ["root", "open_web_api_access"]
+            },
+        },
+    }
+
+
+LOGGING = build_logging_config(LOG_LEVEL, logging_to_console, logging_directory, LOGGING_FILE_FORMAT)
+
+# ------------------------------------------ Healthz 配置 ------------------------------------------
+
+# 调用 Healthz API 需要的 Token
+HEALTHZ_TOKEN = env.str("HEALTHZ_TOKEN", "")
+# 服务健康探针配置
+HEALTHZ_PROBES = env.list(
+    "HEALTHZ_PROBES",
+    default=[
+        "bkuser.monitoring.healthz.probes.MysqlProbe",
+        "bkuser.monitoring.healthz.probes.RedisProbe",
+    ],
+)
+
+# ------------------------------------------ Metric 配置 ------------------------------------------
+
+# 调用 Metric API 需要的 Token
+METRIC_TOKEN = env.str("METRIC_TOKEN", "")
+
+# ------------------------------------------ Tracing 配置 ------------------------------------------
+
+# Sentry DSN 配置
+SENTRY_DSN = env.str("SENTRY_DSN", "")
+
+# 是否开启 OTEL 数据上报，默认不启用
+ENABLE_OTEL_TRACE = env.bool("ENABLE_OTEL_TRACE", False)
+# 上报数据服务名称，一般使用默认值即可
+OTEL_SERVICE_NAME = env.str("OTEL_SERVICE_NAME", "bk-user")
+# sdk 采样规则（always_on / always_off ...）
+OTEL_SAMPLER = env.str("OTEL_SAMPLER", "always_on")
+# OTEL 上报地址（grpc）
+OTEL_GRPC_URL = env.str("OTEL_GRPC_URL", "")
+# OTEL 上报到监控平台的数据 Token，可通过监控平台上新建应用获得
+OTEL_DATA_TOKEN = env.str("OTEL_DATA_TOKEN", "")
+# 是否记录 DB 相关 tracing
+OTEL_INSTRUMENT_DB_API = env.bool("OTEL_INSTRUMENT_DB_API", False)
+
+if ENABLE_OTEL_TRACE or SENTRY_DSN:
+    INSTALLED_APPS += ("bkuser.monitoring.tracing",)
+
+# ------------------------------------------ 加密算法配置 ------------------------------------------
+
+# Django 密码框架配置：https://docs.djangoproject.com/en/3.2/topics/auth/passwords/#auth-password-storage
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.PBKDF2PasswordHasher",
+    # 自定义 pbkdf2_sm3 算法实现
+    "bkuser.common.hashers.PBKDF2SM3PasswordHasher",
+    "django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher",
+    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher",
+]
+
+# 蓝鲸数据库内容加密私钥
+# 使用 `from cryptography.fernet import Fernet; Fernet.generate_key()` 生成随机秘钥
+# 详情查看：https://cryptography.io/en/latest/fernet/
+BKKRILL_ENCRYPT_SECRET_KEY = force_bytes(env.str("BKKRILL_ENCRYPT_SECRET_KEY"))
+
+# 选择加密数据库内容的算法，可选值：SHANGMI, CLASSIC
+BK_CRYPTO_TYPE = env.str("BK_CRYPTO_TYPE", "CLASSIC")
+ENCRYPT_CIPHER_TYPE = "SM4CTR" if BK_CRYPTO_TYPE == "SHANGMI" else "FernetCipher"
+
+# 密码加密算法（可选值：pbkdf2_sha256，pbkdf2_sm3）
+# 重要：一旦用户数据写入后该值不能修改，否则可能导致现有 DB 数据不可用
+# 注：pbkdf2_sm3 性能较差，单次加密约 360ms，pbkdf2_sha256 单次加密约为 60ms
+# 注：尽管 Django 默认支持 argon2, scrypt 等加密算法，但是并发加密时候会对内存有明显压力，更安全但不推荐使用
+PASSWORD_ENCRYPT_ALGORITHM = env.str("PASSWORD_ENCRYPT_ALGORITHM", "")
+
+if not PASSWORD_ENCRYPT_ALGORITHM:
+    PASSWORD_ENCRYPT_ALGORITHM = "pbkdf2_sm3" if BK_CRYPTO_TYPE == "SHANGMI" else "pbkdf2_sha256"
+
+# ------------------------------------------ 蓝鲸通知中心配置 ------------------------------------------
+
+# 通知中心的功能可通过配置开启
+ENABLE_BK_NOTICE = env.bool("ENABLE_BK_NOTICE", False)
+if ENABLE_BK_NOTICE:
+    INSTALLED_APPS += ("bk_notice_sdk",)
+    # 对接通知中心的环境，默认为生产环境
+    BK_NOTICE_ENV = env.str("BK_NOTICE_ENV", "prod")
+    BK_NOTICE = {
+        "STAGE": BK_NOTICE_ENV,
+        "LANGUAGE_COOKIE_NAME": LANGUAGE_COOKIE_NAME,
+        "DEFAULT_LANGUAGE": "en",
+        "PLATFORM": BK_APP_CODE,  # 平台注册的 code，用于获取系统通知消息时进行过滤
+        "BK_API_URL_TMPL": BK_API_URL_TMPL,
+        "BK_API_APP_CODE": BK_APP_CODE,  # 用于调用 apigw 认证
+        "BK_API_SECRET_KEY": BK_APP_SECRET,  # 用于调用 apigw 认证
+    }
+
+# ------------------------------------------ 业务逻辑配置 ------------------------------------------
+# 是否开启多租户模式
+ENABLE_MULTI_TENANT_MODE = env.bool("ENABLE_MULTI_TENANT_MODE", False)
+# 是否启用虚拟账号页面功能
+ENABLE_VIRTUAL_USER = env.bool("ENABLE_VIRTUAL_USER", default=False)
+# 开启多租户模式后，才支持是否启用页面新建租户功能
+ENABLE_CREATE_TENANT = ENABLE_MULTI_TENANT_MODE and env.bool("ENABLE_CREATE_TENANT", default=False)
+# bk-cmsi 网关是否有部署
+HAS_BK_CMSI_APIGW = env.bool("HAS_BK_CMSI_APIGW", default=False)
+# bk-cmsi 网关部署环境
+BK_CMSI_APIGW_STAGE = env.str("BK_CMSI_APIGW_STAGE", "prod")
+# 是否启用微信消息推送功能
+ENABLE_WEIXIN_NOTIFICATION = env.bool("ENABLE_WEIXIN_NOTIFICATION", default=False)
+# 是否启用协同租户功能
+ENABLE_COLLABORATION_TENANT = env.bool("ENABLE_COLLABORATION_TENANT", default=False)
+# 内置租户管理员 username
+INITIAL_ADMIN_USERNAME = env.str("INITIAL_ADMIN_USERNAME", "admin")
+# 内置租户管理员密码
+INITIAL_ADMIN_PASSWORD = env.str("INITIAL_ADMIN_PASSWORD", "")
+
+# logo 文件大小限制，单位为：KB
+MAX_LOGO_SIZE = env.int("MAX_LOGO_SIZE", 256)
+
+# 数据源插件默认 Logo，值为 base64 格式图片数据
+DEFAULT_DATA_SOURCE_PLUGIN_LOGO = ""
+# 租户默认 Logo，值为 base64 格式图片数据
+DEFAULT_TENANT_LOGO = ""
+# 数据源用户默认 Logo，值为 base64 格式图片数据
+DEFAULT_DATA_SOURCE_USER_LOGO = ""
+# 默认手机国际区号
+DEFAULT_PHONE_COUNTRY_CODE = env.str("DEFAULT_PHONE_COUNTRY_CODE", default="86")
+
+# 密码强度相关限制
+# 最小密码长度，过小的下限会导致在选择严格的规则后，难以生成/设置合法的密码（建议最低值 9）
+MIN_PASSWORD_LENGTH = env.int("MIN_PASSWORD_LENGTH", 10)
+# 最小的限制连续长度，过小的下限会导致难以生成/设置合法的密码（建议最低值 3）
+MIN_NOT_CONTINUOUS_COUNT = env.int("MIN_NOT_CONTINUOUS_COUNT", 3)
+# 弱密码词总长度占总密码长度的最大阈值，过高的阈值可能导致密码中包含过多的
+# 诸如 random, password，123456 之类的弱密码常见词（建议最高值 0.6）
+MAX_WEAK_PASSWD_COMBINATION_THRESHOLD = env.float("MAX_WEAK_PASSWD_COMBINATION_THRESHOLD", 0.5)
+# 根据规则随机生成密码最大重试次数，若密码规则不合理，将无法在有限次数内成功生成
+GENERATE_RANDOM_PASSWORD_MAX_RETRIES = env.int("GENERATE_RANDOM_PASSWORD_MAX_RETRIES", 10)
+# zxcvbn 会对密码进行总体强度评估（score [0, 4]），建议限制不能使用评分低于 3 的密码
+MIN_ZXCVBN_PASSWORD_SCORE = env.int("MIN_ZXCVBN_PASSWORD_SCORE", 3)
+
+# 在重置密码时是否允许抛出具体错误信息给到用户（若启用需确认没有被攻击的风险）
+# TODO 评估接入 Captcha 验证码
+ALLOW_RAISE_ERROR_TO_USER_WHEN_RESET_PASSWORD = env.bool("ALLOW_RAISE_ERROR_TO_USER_WHEN_RESET_PASSWORD", False)
+# 短信验证码有效期，默认 5 min
+VERIFICATION_CODE_VALID_TIME = env.int("VERIFICATION_CODE_VALID_TIME", 60 * 5)
+# 验证码长度，默认 8 位，最长不超过 32 位
+VERIFICATION_CODE_LENGTH = env.int("VERIFICATION_CODE_LENGTH", 8)
+# 验证码最大尝试次数
+VERIFICATION_CODE_MAX_RETRIES = env.int("VERIFICATION_CODE_MAX_RETRIES", 3)
+# 单类验证码每天最大发送次数
+VERIFICATION_CODE_MAX_SEND_PER_DAY = env.int("VERIFICATION_CODE_MAX_SEND_PER_DAY", 3)
+
+# 重置密码 Token 有效期，默认 15 min
+RESET_PASSWORD_TOKEN_VALID_TIME = env.int("RESET_PASSWORD_TOKEN_VALID_TIME", 60 * 15)
+# 重置密码 Token 长度，默认 128 位，最长不超过 255 位
+RESET_PASSWORD_TOKEN_LENGTH = env.int("RESET_PASSWORD_TOKEN_LENGTH", 128)
+# 重置密码 Token 每天最大发送次数
+RESET_PASSWORD_TOKEN_MAX_SEND_PER_DAY = env.int("RESET_PASSWORD_TOKEN_MAX_SEND_PER_DAY", 3)
+# 每个租户对个人中心手机号的更新限制 Note: 默认是 need_verify，无需配置。
+# 可配置的值有：(need_verify / editable_directly / not_editable)
+# 值格式："tenant_id1=not_editable,tenant_id2=editable_directly,..."
+TENANT_PHONE_UPDATE_RESTRICTIONS = env.dict("TENANT_PHONE_UPDATE_RESTRICTIONS", default={})
+# 每个租户对个人中心邮箱的更新限制 Note: 默认是 need_verify，无需配置。
+# 可配置的值有：(need_verify / editable_directly / not_editable)
+# 值格式："tenant_id1=not_editable,tenant_id2=editable_directly,..."
+TENANT_EMAIL_UPDATE_RESTRICTIONS = env.dict("TENANT_EMAIL_UPDATE_RESTRICTIONS", default={})
+
+# 数据导入/导出配置
+# 导入文件大小限制，单位为 MB
+MAX_USER_DATA_FILE_SIZE = env.int("MAX_USER_DATA_FILE_SIZE", 10)
+# 导出文件名称前缀
+EXPORT_EXCEL_FILENAME_PREFIX = "bk_user_export"
+# 成员，组织信息导出模板
+EXPORT_ORG_TEMPLATE = MEDIA_ROOT / "excel/export_org_tmpl.xlsx"
+
+# 数据源同步默认超时时间（秒）
+DATA_SOURCE_SYNC_DEFAULT_TIMEOUT = env.int("DATA_SOURCE_SYNC_DEFAULT_TIMEOUT", 60 * 60)
+# 租户同步默认超时时间（秒）
+TENANT_SYNC_DEFAULT_TIMEOUT = env.int("TENANT_SYNC_DEFAULT_TIMEOUT", 15 * 60)
+
+# 限制组织架构页面用户/部门搜索 API 返回的最大条数
+# 由于需要计算组织路径导致性能不佳，建议不要太高，而是让用户细化搜索条件
+ORGANIZATION_SEARCH_API_LIMIT = env.int("ORGANIZATION_SEARCH_API_LIMIT", 20)
+# 限制批量操作数量上限，避免性能问题 / 误操作（目前不支持跨页全选，最大单页 100 条数据）
+ORGANIZATION_BATCH_OPERATION_API_LIMIT = env.int("ORGANIZATION_BATCH_OPERATION_API_LIMIT", 100)
+
+# 限制 bk_username 批量查询 display_info 的数量上限，避免性能问题
+BATCH_QUERY_USER_DISPLAY_INFO_BY_BK_USERNAME_LIMIT = env.int("BATCH_QUERY_USER_DISPLAY_INFO_BY_BK_USERNAME_LIMIT", 100)
+
+# 限制人员选择器用户/部门搜索 API 返回的最大条数，避免性能问题
+SELECTOR_SEARCH_API_LIMIT = env.int("SELECTOR_SEARCH_API_LIMIT", 100)
+
+# Open API V2 ListUser 接口缓存过期时间，单位秒，默认 1 小时
+OPEN_API_V2_LIST_USER_CACHE_TIMEOUT = env.int("OPEN_API_V2_LIST_USER_CACHE_TIMEOUT", default=60 * 60)
+
+# 限制 OpenWeb API 调用频率，避免恶意请求问题
+OPEN_WEB_API_THROTTLE_RATES = env.str("OPEN_WEB_API_THROTTLE_RATES", "100/minute")
+
+# 为避免 OpenWebAPI 被滥用，调用方必须有基于浏览器请求的必要 Headers
+OPEN_WEB_API_REQUIRED_BROWSER_HEADERS = env.list(
+    "OPEN_WEB_API_REQUIRED_BROWSER_HEADERS",
+    default=[
+        "HTTP_ACCEPT",
+        "HTTP_ACCEPT_LANGUAGE",
+        "HTTP_ACCEPT_ENCODING",
+        "HTTP_USER_AGENT",
+        "HTTP_SEC_FETCH_DEST",
+        "HTTP_SEC_FETCH_MODE",
+        "HTTP_SEC_FETCH_SITE",
+    ],
+)
+
+# 限制 USER_AGENT 只能是来自于浏览器
+OPEN_WEB_API_USER_AGENT_WHITELIST = env.list(
+    "OPEN_WEB_API_USER_AGENT_WHITELIST", default=["Chrome", "Firefox", "Safari", "Edg"]
+)

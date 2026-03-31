@@ -1,0 +1,244 @@
+[project]
+name = "bk-user"
+description = ""
+version = "0.1.0"
+readme = "README.md"
+dynamic = ["classifiers"]
+authors = [{ name = "TencentBlueKing", email = "contactus_bk@tencent.com" }]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "django==4.2.23",
+    "djangorestframework==3.16.0",
+    "celery==5.5.3",
+    # Note: 不可以升级到 2.8.1 版本，存在 mysql 5.7 兼容性问题，虽然官方 master 分支已修复，但未出新版本
+    "django-celery-beat==2.8.0",
+    "django-celery-results==2.6.0",
+    "pymysql==1.1.1",
+    "requests==2.32.5",
+    "gunicorn==23.0.0",
+    "gevent==25.5.1",
+    "django-environ==0.12.0",
+    "django-cors-headers==4.7.0",
+    "django-prometheus==2.4.1",
+    "whitenoise==6.9.0",
+    "werkzeug==3.1.3",
+    "python-json-logger==3.3.0",
+    "concurrent-log-handler==0.9.25",
+    "drf-yasg==1.21.10",
+    "blue-krill==2.1.3",
+    "django-mptt==0.17.0",
+    "redis==6.2.0",
+    "django-redis==6.0.0",
+    "pydantic[email]==2.11.7",
+    "zxcvbn==4.5.0",
+    "phonenumbers==9.0.9",
+    "jsonref==1.1.0",
+    "openpyxl==3.1.5",
+    "tongsuopy-crayon==1.0.2b6",
+    "sentry-sdk==2.33.0",
+    "bk-notice-sdk==1.4.2",
+    "opentelemetry-api==1.35.0",
+    "opentelemetry-sdk==1.35.0",
+    "opentelemetry-proto==1.35.0",
+    "opentelemetry-exporter-otlp==1.35.0",
+    "opentelemetry-instrumentation-django==0.56b0",
+    "opentelemetry-instrumentation-dbapi==0.56b0",
+    "opentelemetry-instrumentation-redis==0.56b0",
+    "opentelemetry-instrumentation-requests==0.56b0",
+    "opentelemetry-instrumentation-celery==0.56b0",
+    "opentelemetry-instrumentation-logging==0.56b0",
+    "django-modeltranslation==0.19.16",
+    "ldap3==2.9.1",
+    "nanoid==2.0.0",
+    "apigw-manager[cryptography]==4.1.0",
+    "defusedxml==0.7.1",
+    # Note: setuptools > 80.8.0 will issue pkg_resources warnings when executing Python-related commands.
+    "setuptools==80.8.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7.1,<0.8.0",
+    "mypy>=1.10.1,<2.0.0",
+    "types-requests>=2.31.0.1,<3.0.0",
+    "pytest>=8.3.3,<9.0.0",
+    "pytest-django>=4.9.0,<5.0.0",
+    "types-pytz>=2024.2.0.20241003,<2025.0.0.0",
+    "import-linter>=2.1,<3.0.0",
+    "types-redis>=4.6.0.20241004,<5.0.0.0",
+    "types-pymysql>=1.1.0.20240524,<2.0.0"
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+# url = "https://mirrors.tencent.com/pypi/simple"
+url = "https://pypi.org/simple/"
+default = true
+
+[tool.mypy]
+ignore_missing_imports = true
+show_error_codes = true
+strict_optional = true
+pretty = true
+check_untyped_defs = true
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = [
+    "*.migrations.*",
+    "bkuser.utils.tree"
+]
+ignore_errors = true
+
+[tool.ruff]
+# Same as Black.
+line-length = 119
+# show an enumeration of all autofixed lint violations
+# show-fixes = true
+# show source code snippets when reporting lint violations
+# show-source = true
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "*/migrations/*",
+]
+force-exclude = true
+
+[tool.ruff.format]
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+# Enable Pyflakes `E` and `F` codes by default.
+select = ["E", "F", "W", "I", "C90", "PL", "RET", "N", "C4", "PT", "PERF", "G", "TRY", "SIM", "B", "PIE"]
+# All Rule: https://beta.ruff.rs/docs/rules/
+# Add `noqa: E501` manually when necessary until this issue is fixed: https://github.com/astral-sh/ruff/issues/3825
+ignore = [
+    # Consider moving this statement to an else block
+    "TRY300",
+    # Avoid specifying long messages outside the exception class
+    "TRY003",
+    # Use contextlib.suppress({exception}) instead of try-except-pass
+    "SIM105",
+    # Use ternary operator {contents} instead of if-else-block
+    "SIM108",
+    # Avoid too many arguments
+    "PLR0913",
+    # Avoid too many return statements
+    "PLR0911",
+    # Exception should be named with `Error` suffix
+    "N818",
+    # raise-without-from-inside-except
+    "B904"
+]
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**.py" = ["PLR2004"]
+
+[tool.ruff.lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
+
+[tool.ruff.lint.isort]
+relative-imports-order = "closest-to-furthest"
+
+[tool.importlinter]
+root_package = "bkuser"
+
+# 分层
+[[tool.importlinter.contracts]]
+name = "Layers contract"
+type = "layers"
+layers = [
+    "bkuser.apis | bkuser.auth | bkuser.monitoring",
+    "bkuser.biz",
+    "bkuser.apps",
+    "bkuser.plugins",
+    "bkuser.component",
+    "bkuser.common",
+    "bkuser.utils",
+]
+ignore_imports = [
+    "bkuser.apps.tenant.management.commands.* -> bkuser.biz.tenant",
+]
+
+# apps 分层
+[[tool.importlinter.contracts]]
+name = "Apps Layers contract"
+type = "layers"
+layers = [
+    "bkuser.apps.sync | bkuser.apps.permission",
+    "bkuser.apps.notification",
+    "bkuser.apps.tenant",
+    "bkuser.apps.idp",
+    "bkuser.apps.data_source",
+]
+
+# apos.sync 分层
+[[tool.importlinter.contracts]]
+name = "Apps sync Layers contract"
+type = "layers"
+layers = [
+    "bkuser.apps.sync.periodic_tasks",
+    "bkuser.apps.sync.managers",
+    "bkuser.apps.sync.tasks",
+    "bkuser.apps.sync.runners",
+    "bkuser.apps.sync.syncers",
+    "bkuser.apps.sync.models",
+]
+
+# biz 分层
+[[tool.importlinter.contracts]]
+name = "Biz Layers contract"
+type = "layers"
+layers = [
+    "bkuser.biz.tenant",
+    "bkuser.biz.data_source | bkuser.biz.organization | bkuser.biz.exporters",
+    "bkuser.biz.validators",
+]
+
+# apis 独立模块
+[[tool.importlinter.contracts]]
+name = "Apis Independence contract"
+type = "independence"
+modules = [
+    "bkuser.apis.login",
+    "bkuser.apis.open_v2",
+    "bkuser.apis.web",
+]
+
+# apis.web 独立模块
+[[tool.importlinter.contracts]]
+name = "Apis Web Independence contract"
+type = "independence"
+modules = [
+    "bkuser.apis.web.basic",
+    "bkuser.apis.web.data_source",
+    "bkuser.apis.web.organization",
+    "bkuser.apis.web.platform_management",
+]
+ignore_imports = [
+    "bkuser.apis.web.*.views -> bkuser.apis.web.*.serializers",
+]

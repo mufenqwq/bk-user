@@ -1,0 +1,39 @@
+# -*- coding: utf-8 -*-
+# TencentBlueKing is pleased to support the open source community by making
+# 蓝鲸智云 - 用户管理 (bk-user) available.
+# Copyright (C) 2017 Tencent. All rights reserved.
+# Licensed under the MIT License (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#     http://opensource.org/licenses/MIT
+#
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+# either express or implied. See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# We undertake not to change the open source license (MIT license) applicable
+# to the current version of the project delivered to anyone in the future.
+from typing import Optional
+
+from pydantic import BaseModel, field_validator
+
+from bkuser.apps.notification.constants import NotificationMethod
+
+
+class NotificationTemplate(BaseModel):
+    """通知模板"""
+
+    method: NotificationMethod
+    # 发送者
+    sender: str
+    # 通知模板标题
+    title: Optional[str] = None
+    # 模板内容
+    content: str
+
+    @field_validator("sender", mode="before")
+    @classmethod
+    def normalize_sender(cls, sender: str) -> str:
+        """兼容历史数据：将 DB 中已存的"蓝鲸智云"转换为空字符串"""
+        return "" if sender == "蓝鲸智云" else sender

@@ -1,0 +1,363 @@
+# -*- coding: utf-8 -*-
+# TencentBlueKing is pleased to support the open source community by making
+# 蓝鲸智云 - 用户管理 (bk-user) available.
+# Copyright (C) 2017 Tencent. All rights reserved.
+# Licensed under the MIT License (the "License"); you may not use this file except
+# in compliance with the License. You may obtain a copy of the License at
+#
+#     http://opensource.org/licenses/MIT
+#
+# Unless required by applicable law or agreed to in writing, software distributed under
+# the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+# either express or implied. See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# We undertake not to change the open source license (MIT license) applicable
+# to the current version of the project delivered to anyone in the future.
+import logging
+from collections import Counter
+from typing import Dict, List
+
+from django.utils.translation import gettext_lazy as _
+from pydantic import ValidationError as PDValidationError
+from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
+
+from bkuser.apps.tenant.constants import (
+    DISPLAY_NAME_EXPRESSION_EXTRA_FIELD_CONFIGS,
+    DISPLAY_NAME_EXPRESSION_FIELD_PATTERN,
+    NotificationMethod,
+    NotificationScene,
+    UserFieldDataType,
+)
+from bkuser.apps.tenant.data_models import DisplayNameExpressionExtraField, TenantUserCustomFieldOption
+from bkuser.apps.tenant.models import TenantUserCustomField, UserBuiltinField
+from bkuser.biz.tenant import TenantUserDisplayNameHandler
+from bkuser.biz.validators import validate_tenant_custom_field_name
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_options(options: List[Dict[str, str]]):
+    """租户自定义字段，枚举类型字段<选项>设置校验"""
+    if not options:
+        raise ValidationError(_("需要提供至少一个枚举选项"))
+
+    try:
+        opts = [TenantUserCustomFieldOption(**opt) for opt in options]
+    except PDValidationError as e:
+        raise ValidationError(_("枚举选项不合法：{}".format(e)))
+
+    # 判断重复枚举 id
+    option_ids = [obj.id for obj in opts]
+    if duplicate_opt_ids := [opt_id for opt_id, cnt in Counter(option_ids).items() if cnt > 1]:
+        raise ValidationError(_("存在重复枚举 ID：{}").format(duplicate_opt_ids))
+
+    # 判断重复枚举值
+    option_values = [obj.value for obj in opts]
+    if duplicate_opt_vals := [opt_val for opt_val, cnt in Counter(option_values).items() if cnt > 1]:
+        raise ValidationError(_("存在重复枚举值：{}").format(duplicate_opt_vals))
+
+
+def _validate_enum_default(default: str, opt_ids: List[str]):
+    """用户自定义字段：枚举类型的 <默认值> 字段校验"""
+    if default not in opt_ids:
+        raise ValidationError(_("枚举默认值 {} 需要是可选值 {} 之一").format(default, opt_ids))
+
+
+def _validate_multi_enum_default(default: List[str], opt_ids: List[str]):
+    """用户自定义字段：多选枚举类型的 <默认值> 字段校验"""
+    if not isinstance(default, List):
+        raise ValidationError(_("多选枚举类型自定义字段 默认值 必须是 列表类型"))
+
+    if not (default and set(default).issubset(opt_ids)):
+        raise ValidationError(_("多选枚举默认值 {} 不是可选值 {} 的子集").format(default, opt_ids))
+
+
+class BuiltinFieldOutputSLZ(serializers.Serializer):
+    id = serializers.IntegerField(help_text="字段 ID", read_only=True)
+    name = serializers.CharField(help_text="英文标识")
+    display_name = serializers.CharField(help_text="展示用名称")
+    data_type = serializers.ChoiceField(help_text="字段类型", choices=UserFieldDataType.get_choices())
+    required = serializers.BooleanField(help_text="是否必填")
+    unique = serializers.BooleanField(help_text="是否唯一")
+    default = serializers.JSONField(help_text="默认值")
+    options = serializers.JSONField(help_text="选项")
+
+
+class TenantUserCustomFieldOutputSLZ(serializers.Serializer):
+    id = serializers.IntegerField(help_text="字段 ID", read_only=True)
+    name = serializers.CharField(help_text="英文标识")
+    display_name = serializers.CharField(help_text="展示用名称")
+    data_type = serializers.ChoiceField(help_text="字段类型", choices=UserFieldDataType.get_choices())
+    required = serializers.BooleanField(help_text="是否必填")
+    unique = serializers.BooleanField(help_text="是否唯一")
+    personal_center_visible = serializers.BooleanField(help_text="是否在个人中心可见")
+    personal_center_editable = serializers.BooleanField(help_text="是否在个人中心可编辑")
+    manager_editable = serializers.BooleanField(help_text="租户管理员是否可重复编辑")
+    default = serializers.JSONField(help_text="默认值")
+    options = serializers.JSONField(help_text="选项")
+
+
+class TenantUserFieldOutputSLZ(serializers.Serializer):
+    builtin_fields = serializers.ListField(help_text="内置字段", child=BuiltinFieldOutputSLZ())
+    custom_fields = serializers.ListField(help_text="自定义字段", child=TenantUserCustomFieldOutputSLZ())
+
+
+class OptionInputSLZ(serializers.Serializer):
+    id = serializers.CharField(help_text="枚举 ID")
+    value = serializers.CharField(help_text="枚举值")
+
+
+class TenantUserCustomFieldCreateInputSLZ(serializers.Serializer):
+    name = serializers.CharField(help_text="英文标识", max_length=128, validators=[validate_tenant_custom_field_name])
+    display_name = serializers.CharField(help_text="字段名称", max_length=128)
+    data_type = serializers.ChoiceField(help_text="字段类型", choices=UserFieldDataType.get_choices())
+    required = serializers.BooleanField(help_text="是否必填", default=False)
+    unique = serializers.BooleanField(help_text="是否唯一", default=False)
+    personal_center_visible = serializers.BooleanField(help_text="是否在个人中心可见", default=False)
+    personal_center_editable = serializers.BooleanField(help_text="是否在个人中心可编辑", default=False)
+    manager_editable = serializers.BooleanField(help_text="租户管理员是否可重复编辑", default=True)
+    default = serializers.JSONField(help_text="默认值", required=False)
+    options = serializers.ListField(
+        help_text="选项", required=False, child=OptionInputSLZ(help_text="枚举字段选项设置"), default=list
+    )
+
+    def validate_display_name(self, display_name):
+        if TenantUserCustomField.objects.filter(
+            tenant_id=self.context["tenant_id"], display_name=display_name
+        ).exists():
+            raise ValidationError(_("字段名称 {} 已存在").format(display_name))
+
+        if UserBuiltinField.objects.filter(display_name=display_name).exists():
+            raise ValidationError(_("字段名称 {} 与内置字段冲突").format(display_name))
+
+        return display_name
+
+    def validate_name(self, name):
+        if TenantUserCustomField.objects.filter(tenant_id=self.context["tenant_id"], name=name).exists():
+            raise ValidationError(_("英文标识 {} 已存在").format(name))
+
+        if UserBuiltinField.objects.filter(name=name).exists():
+            raise ValidationError(_("英文标识 {} 与内置字段冲突").format(name))
+
+        return name
+
+    def validate(self, attrs):
+        data_type = attrs.get("data_type")
+        options = attrs.get("options")
+        default = attrs.get("default")
+
+        if attrs["unique"] and data_type in [UserFieldDataType.ENUM, UserFieldDataType.MULTI_ENUM]:
+            raise ValidationError(_("枚举类型字段不支持设置唯一性"))
+
+        if data_type == UserFieldDataType.NUMBER:
+            # 目前字段编辑，数字类型没有支持填写默认值，而模型默认是 ""
+            # 无法在后续流程中做类型转换，因此这里修改默认值为 0
+            attrs["default"] = 0
+
+        opt_ids = [opt["id"] for opt in options]
+        if data_type == UserFieldDataType.ENUM:
+            _validate_options(options)
+            _validate_enum_default(default, opt_ids)
+
+        elif data_type == UserFieldDataType.MULTI_ENUM:
+            _validate_options(options)
+            _validate_multi_enum_default(default, opt_ids)
+
+        if attrs["personal_center_editable"] and not attrs["personal_center_visible"]:
+            raise ValidationError(_("设置为在个人中心可编辑的字段必须也设置可见"))
+
+        return attrs
+
+
+def _validate_mapping(mapping: Dict, current_options: List[Dict], new_options: List[Dict]):
+    """校验数据迁移策略"""
+    if not isinstance(mapping, Dict):
+        raise ValidationError(_("字段迁移映射必须是字典类型，格式为：{被删除的枚举 ID: 迁移目标值枚举 ID}"))
+
+    cur_opt_ids, new_opt_ids = {opt["id"] for opt in current_options}, {opt["id"] for opt in new_options}
+    if (cur_opt_ids == new_opt_ids) and mapping:
+        raise ValidationError(_("枚举选项没有修改，无需配置字段迁移映射"))
+
+    # 对于被删除的枚举选项，需要确保已经配置了字段迁移映射
+    if deleted_opt_ids := cur_opt_ids - new_opt_ids:  # noqa: SIM102 nested if is necessary
+        if deleted_opt_ids != set(mapping.keys()):
+            raise ValidationError(_("被删除的枚举项 {} 均需要配置字段迁移映射").format(deleted_opt_ids))
+
+    # 对于字段迁移映射的目标值，需要确保都在新的枚举选项中
+    if not_exists_target_ids := set(mapping.values()) - new_opt_ids:
+        raise ValidationError(_("字段迁移映射的目标值 {} 不在新的枚举选项中").format(not_exists_target_ids))
+
+
+class TenantUserCustomFieldUpdateInputSLZ(serializers.Serializer):
+    display_name = serializers.CharField(help_text="展示用名称", max_length=128)
+    default = serializers.JSONField(help_text="默认值", required=False)
+    options = serializers.ListField(
+        help_text="选项", required=False, child=OptionInputSLZ(help_text="枚举字段选项设置"), default=list
+    )
+    mapping = serializers.JSONField(help_text="字段迁移映射", required=False)
+
+    def validate_display_name(self, display_name):
+        if (
+            TenantUserCustomField.objects.filter(tenant_id=self.context["tenant_id"], display_name=display_name)
+            .exclude(id=self.context["custom_field_id"])
+            .exists()
+        ):
+            raise ValidationError(_("展示用名称 {} 已存在").format(display_name))
+
+        if UserBuiltinField.objects.filter(display_name=display_name).exists():
+            raise ValidationError(_("展示用名称 {} 与内置字段冲突").format(display_name))
+
+        return display_name
+
+    def validate(self, attrs):
+        custom_field = TenantUserCustomField.objects.get(id=self.context["custom_field_id"])
+        data_type = custom_field.data_type
+        mapping = attrs.get("mapping")
+        options = attrs.get("options")
+        default = attrs.get("default")
+
+        opt_ids = [opt["id"] for opt in options]
+        if data_type == UserFieldDataType.ENUM:
+            _validate_options(options)
+            _validate_enum_default(default, opt_ids)
+            _validate_mapping(mapping, custom_field.options, options)
+
+        elif data_type == UserFieldDataType.MULTI_ENUM:
+            _validate_options(options)
+            _validate_multi_enum_default(default, opt_ids)
+            _validate_mapping(mapping, custom_field.options, options)
+
+        else:
+            # 非枚举类型的，更新时候不需要字段迁移映射
+            attrs["mapping"] = {}
+
+        # NOTE: 对于历史迁移的数据，必须保证即使修改，选项 ID 也是可以转换回整数的（向前兼容）
+        if custom_field.use_digit_option_id and options:
+            for opt in options:
+                if not opt["id"].isdigit():
+                    raise ValidationError(_("枚举选项 ID 必须是数字，值 {} 不合法").format(opt["id"]))
+
+        return attrs
+
+
+class NotificationTemplatesInputSLZ(serializers.Serializer):
+    method = serializers.ChoiceField(help_text="通知方式", choices=NotificationMethod.get_choices())
+    scene = serializers.ChoiceField(help_text="通知场景", choices=NotificationScene.get_choices())
+    title = serializers.CharField(help_text="通知标题", allow_null=True)
+    sender = serializers.EmailField(help_text="发送人", required=False, allow_blank=True, default="")
+    content = serializers.CharField(help_text="通知内容")
+    content_html = serializers.CharField(help_text="通知内容，页面展示使用")
+
+    def to_internal_value(self, data):
+        # Note: 存量历史数据可能存在 sender=“蓝鲸智云"，而 EmailField 的声明必然会失败，所以这里兼容处理历史数据
+        if data.get("sender") == "蓝鲸智云":
+            data["sender"] = ""
+        return super().to_internal_value(data)
+
+
+class TenantUserValidityPeriodConfigInputSLZ(serializers.Serializer):
+    enabled = serializers.BooleanField(help_text="是否启用账户有效期")
+    validity_period = serializers.IntegerField(help_text="账户有效期，单位：天")
+    remind_before_expire = serializers.ListField(
+        help_text="临过期提醒时间",
+        child=serializers.IntegerField(min_value=1),
+    )
+    enabled_notification_methods = serializers.ListField(
+        help_text="通知方式",
+        child=serializers.ChoiceField(choices=NotificationMethod.get_choices()),
+        allow_empty=False,
+    )
+    notification_templates = serializers.ListField(
+        help_text="通知模板", child=NotificationTemplatesInputSLZ(), allow_empty=False
+    )
+
+
+class TenantUserValidityPeriodConfigOutputSLZ(TenantUserValidityPeriodConfigInputSLZ):
+    pass
+
+
+class TenantUserDisplayNameExpressionConfigUpdateInputSLZ(serializers.Serializer):
+    expression = serializers.CharField(help_text="display_name 表达式", max_length=128)
+
+    def validate_expression(self, expression: str) -> str:
+        # 匹配表达式中的`{xxx}`提取字段名
+        fields = DISPLAY_NAME_EXPRESSION_FIELD_PATTERN.findall(expression)
+
+        if not fields:
+            raise ValidationError(_("表达式中至少需要填入一个字段"))
+
+        if len(fields) > 3:  # noqa: PLR2004
+            raise ValidationError(_("表达式中字段个数不能超过 3 个"))
+
+        if len(fields) != len(set(fields)):
+            raise ValidationError(_("表达式中字段不能重复"))
+
+        # 校验非字段部分的字符数量是否超过 16
+        non_field_length = len(DISPLAY_NAME_EXPRESSION_FIELD_PATTERN.sub("", expression))
+        if non_field_length > 16:  # noqa: PLR2004
+            raise ValidationError(_("表达式中非字段部分的字符数不能超过 16 个"))
+
+        # 先解析字段，再一次性校验字段有效性和唯一性
+        parsed_fields = TenantUserDisplayNameHandler.parse_display_name_expression(
+            self.context["tenant_id"], expression
+        )
+        self._validate_parsed_fields(fields, parsed_fields)
+
+        return expression
+
+    def _validate_parsed_fields(self, original_fields: List[str], parsed_fields: Dict[str, List[str]]):
+        """校验解析后的字段有效性和唯一性"""
+        # 检查是否有无效字段（解析后不在任何分类中的字段）
+        parsed_field_set = set(parsed_fields["builtin"] + parsed_fields["custom"] + parsed_fields["extra"])
+        invalid_fields = [f for f in original_fields if f not in parsed_field_set]
+        if invalid_fields:
+            raise ValidationError(_("表达式中存在无效字段：{}").format(", ".join(invalid_fields)))
+
+        # 表达式字段必须存在唯一字段
+        if not self._has_unique_field(parsed_fields):
+            raise ValidationError(_("表达式中必须存在唯一字段"))
+
+    def _has_unique_field(self, parsed_fields: Dict[str, List[str]]) -> bool:
+        """检查解析后的字段中是否包含唯一字段"""
+        tenant_id = self.context["tenant_id"]
+
+        # 检查内置字段中的唯一字段
+        if (
+            parsed_fields["builtin"]
+            and UserBuiltinField.objects.filter(name__in=parsed_fields["builtin"], unique=True).exists()
+        ):
+            return True
+
+        # 检查自定义字段中的唯一字段
+        if (
+            parsed_fields["custom"]
+            and TenantUserCustomField.objects.filter(
+                tenant_id=tenant_id, name__in=parsed_fields["custom"], unique=True
+            ).exists()
+        ):
+            return True
+
+        # 检查额外字段中的唯一字段
+        if parsed_fields["extra"]:
+            extra_fields = [
+                DisplayNameExpressionExtraField(**field)  # type: ignore
+                for field in DISPLAY_NAME_EXPRESSION_EXTRA_FIELD_CONFIGS
+            ]
+            for field in extra_fields:
+                if field.name in parsed_fields["extra"] and field.unique:
+                    return True
+
+        return False
+
+
+class TenantUserDisplayNameExpressionConfigRetrieveOutputSLZ(serializers.Serializer):
+    expression = serializers.CharField(help_text="display_name 表达式")
+
+
+class TenantUserDisplayNameExpressionConfigPreviewInputSLZ(TenantUserDisplayNameExpressionConfigUpdateInputSLZ): ...
+
+
+class TenantUserDisplayNameExpressionConfigPreviewOutputSLZ(serializers.Serializer):
+    display_name = serializers.CharField(help_text="预览 display_name")
