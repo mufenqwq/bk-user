@@ -19,7 +19,6 @@ import datetime
 from typing import Any, Dict, List
 
 import pytest
-
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource, DataSourcePlugin
 from bkuser.apps.idp.constants import INVALID_REAL_DATA_SOURCE_ID, IdpStatus
@@ -32,6 +31,7 @@ from bkuser.idp_plugins.wecom.plugin import WecomIdpPluginConfig
 from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.general.models import GeneralDataSourcePluginConfig
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
+
 from tests.test_utils.helpers import generate_random_string
 
 pytestmark = pytest.mark.django_db

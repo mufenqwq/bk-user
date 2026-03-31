@@ -18,7 +18,6 @@
 from typing import Set
 
 import pytest
-
 from bkuser.apps.data_source.models import (
     DataSource,
     DataSourceDepartment,

@@ -16,12 +16,11 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
+from bkuser.apis.web.personal_center.constants import PhoneOrEmailUpdateRestrictionEnum
+from bkuser.apps.tenant.models import TenantUser
 from django.test.utils import override_settings
 from django.urls import reverse
 from rest_framework import status
-
-from bkuser.apis.web.personal_center.constants import PhoneOrEmailUpdateRestrictionEnum
-from bkuser.apps.tenant.models import TenantUser
 
 pytestmark = pytest.mark.django_db
 

@@ -17,12 +17,12 @@
 from unittest import mock
 
 import pytest
-from django.conf import settings
-from django.test import override_settings
-
 from bkuser.apps.notification.constants import NotificationMethod, NotificationScene
 from bkuser.apps.notification.notifier import ContactNotifier, TenantUserNotifier, UserTmplContextGenerator
 from bkuser.apps.tenant.models import TenantUser
+from django.conf import settings
+from django.test import override_settings
+
 from tests.test_utils.tenant import sync_users_depts_to_tenant
 
 pytestmark = pytest.mark.django_db

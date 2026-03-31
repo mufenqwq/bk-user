@@ -16,7 +16,6 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
-
 from bkuser.apps.sync.constants import SyncTaskStatus
 from bkuser.apps.sync.tasks import sync_data_source
 from bkuser.apps.sync.workbook_temp_store import WorkbookTempStore

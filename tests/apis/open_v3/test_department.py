@@ -16,11 +16,10 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
-from django.urls import reverse
-from rest_framework import status
-
 from bkuser.apps.tenant.constants import TenantUserStatus
 from bkuser.apps.tenant.models import TenantDepartment, TenantUser
+from django.urls import reverse
+from rest_framework import status
 
 pytestmark = pytest.mark.django_db
 

@@ -17,7 +17,6 @@
 from unittest import mock
 
 import pytest
-
 from bkuser.plugins.general.models import GeneralDataSourcePluginConfig
 from bkuser.plugins.general.plugin import GeneralDataSourcePlugin
 

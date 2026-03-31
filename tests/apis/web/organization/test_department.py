@@ -16,9 +16,6 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
-from django.urls import reverse
-from rest_framework import status
-
 from bkuser.apps.data_source.models import (
     DataSourceDepartment,
     DataSourceDepartmentRelation,
@@ -26,6 +23,9 @@ from bkuser.apps.data_source.models import (
 )
 from bkuser.apps.tenant.models import TenantDepartment, TenantDepartmentIDRecord
 from bkuser.plugins.local.utils import gen_dept_code
+from django.urls import reverse
+from rest_framework import status
+
 from tests.test_utils.helpers import generate_random_string
 from tests.test_utils.tenant import sync_users_depts_to_tenant
 

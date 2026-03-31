@@ -16,7 +16,6 @@
 # to the current version of the project delivered to anyone in the future.
 
 import pytest
-
 from bkuser.apps.data_source.models import DataSourceDepartment, DataSourceUser
 from bkuser.apps.sync.constants import DataSourceSyncObjectType, SyncOperation, SyncTaskStatus
 from bkuser.apps.sync.contexts import DataSourceSyncTaskContext, TenantSyncTaskContext

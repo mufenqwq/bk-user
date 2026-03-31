@@ -15,7 +15,6 @@
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
 import pytest
-
 from bkuser.apps.data_source.models import DataSourceUser
 from bkuser.biz.exporters import DataSourceUserExporter, UserExcelWriter, get_user_export_template
 

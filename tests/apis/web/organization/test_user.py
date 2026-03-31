@@ -21,12 +21,6 @@ from typing import Any, Dict, List
 
 import pytest
 import pytz
-from django.conf import settings
-from django.urls import reverse
-from django.utils import timezone
-from django.utils.http import urlencode
-from rest_framework import status
-
 from bkuser.apps.data_source.models import (
     DataSourceDepartmentUserRelation,
     DataSourceUser,
@@ -34,6 +28,12 @@ from bkuser.apps.data_source.models import (
 )
 from bkuser.apps.tenant.constants import TenantUserStatus
 from bkuser.apps.tenant.models import TenantDepartment, TenantUser, TenantUserCustomField, TenantUserIDRecord
+from django.conf import settings
+from django.urls import reverse
+from django.utils import timezone
+from django.utils.http import urlencode
+from rest_framework import status
+
 from tests.test_utils.helpers import generate_random_string
 
 pytestmark = pytest.mark.django_db

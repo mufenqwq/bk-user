@@ -20,7 +20,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from bkuser.utils.base64 import load_image_as_base64
 
 

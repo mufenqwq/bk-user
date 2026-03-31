@@ -19,7 +19,6 @@ from itertools import groupby
 from typing import Dict, List, Set
 
 import pytest
-
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import (
     DataSource,
