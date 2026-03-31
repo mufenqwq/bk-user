@@ -41,7 +41,7 @@ class DataSourceQuerySet(models.QuerySet):
 
 
 # 数据源管理器类
-class DataSourceManager(models.Manager.from_queryset(DataSourceQuerySet)):
+class DataSourceManager(models.Manager.from_queryset(DataSourceQuerySet)):  # type: ignore
     def check_username_affix_unique(
         self, tenant_id: str, prefix: str, suffix: str, exclude_id: int | None = None
     ) -> None:
