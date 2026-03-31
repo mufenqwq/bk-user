@@ -26,8 +26,6 @@ from rest_framework.response import Response
 from bkuser.apis.open_v3.mixins import OpenApiCommonMixin
 from bkuser.apis.open_v3.pagination import gen_pagination_class
 from bkuser.apis.open_v3.serializers.user import (
-    TenantUserContactProfileListInputSLZ,
-    TenantUserContactProfileListOutputSLZ,
     TenantUserDepartmentListInputSLZ,
     TenantUserDepartmentListOutputSLZ,
     TenantUserDisplayInfoListInputSLZ,
@@ -75,7 +73,7 @@ class TenantUserDisplayInfoListApi(OpenApiCommonMixin, generics.ListAPIView):
         return TenantUser.objects.filter(
             id__in=data["bk_usernames"],
             tenant_id=self.tenant_id,
-            data_source_id=self.real_data_source_id,
+            data_source_id__in=self.real_data_source_ids,
         ).select_related("data_source_user")
 
     def get_serializer_context(self):
@@ -106,7 +104,7 @@ class TenantUserRetrieveApi(OpenApiCommonMixin, generics.RetrieveAPIView):
 
     def get_queryset(self):
         return TenantUser.objects.filter(
-            tenant_id=self.tenant_id, data_source_id=self.real_data_source_id
+            tenant_id=self.tenant_id, data_source_id__in=self.real_data_source_ids
         ).select_related("data_source_user", "data_source")
 
     @swagger_auto_schema(
@@ -139,7 +137,7 @@ class TenantUserDepartmentListApi(OpenApiCommonMixin, generics.ListAPIView):
         data = slz.validated_data
 
         tenant_user = get_object_or_404(
-            TenantUser.objects.filter(tenant_id=self.tenant_id, data_source_id=self.real_data_source_id),
+            TenantUser.objects.filter(tenant_id=self.tenant_id, data_source_id__in=self.real_data_source_ids),
             id=kwargs["id"],
         )
 
@@ -215,7 +213,7 @@ class TenantUserLeaderListApi(OpenApiCommonMixin, generics.ListAPIView):
 
     def get_queryset(self) -> QuerySet[TenantUser]:
         tenant_user = get_object_or_404(
-            TenantUser.objects.filter(tenant_id=self.tenant_id, data_source_id=self.real_data_source_id),
+            TenantUser.objects.filter(tenant_id=self.tenant_id, data_source_id__in=self.real_data_source_ids),
             id=self.kwargs["id"],
         )
 
@@ -258,7 +256,7 @@ class TenantUserListApi(OpenApiCommonMixin, generics.ListAPIView):
     def get_queryset(self) -> QuerySet[TenantUser]:
         return (
             TenantUser.objects.select_related("data_source_user")
-            .filter(tenant_id=self.tenant_id, data_source_id=self.real_data_source_id)
+            .filter(tenant_id=self.tenant_id, data_source_id__in=self.real_data_source_ids)
             .order_by("id")
         )
 
@@ -282,9 +280,6 @@ class TenantUserListApi(OpenApiCommonMixin, generics.ListAPIView):
 class TenantUserSensitiveInfoListApi(OpenApiCommonMixin, generics.ListAPIView):
     """
     根据 bk_username 批量查询用户敏感信息
-
-    Note: 该接口为旧版 bk-cmsi 兼容接口，新版 bk-cmsi 已切换到 TenantUserContactProfileListApi
-    目前需要保留该接口以保持向后兼容
     """
 
     pagination_class = None
@@ -297,7 +292,7 @@ class TenantUserSensitiveInfoListApi(OpenApiCommonMixin, generics.ListAPIView):
         data = slz.validated_data
 
         return TenantUser.objects.filter(
-            id__in=data["bk_usernames"], tenant_id=self.tenant_id, data_source_id=self.real_data_source_id
+            id__in=data["bk_usernames"], tenant_id=self.tenant_id, data_source_id__in=self.real_data_source_ids
         ).select_related("data_source_user")
 
     @swagger_auto_schema(
@@ -306,37 +301,6 @@ class TenantUserSensitiveInfoListApi(OpenApiCommonMixin, generics.ListAPIView):
         operation_description="批量查询用户敏感信息",
         query_serializer=TenantUserSensitiveInfoListInputSLZ(),
         responses={status.HTTP_200_OK: TenantUserSensitiveInfoListOutputSLZ(many=True)},
-    )
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
-
-
-class TenantUserContactProfileListApi(OpenApiCommonMixin, generics.ListAPIView):
-    """
-    根据 bk_username 批量查询用户联系信息
-
-    Note: 该接口为 bk-cmsi 专用接口,请勿直接用于其他业务场景
-    """
-
-    pagination_class = None
-
-    serializer_class = TenantUserContactProfileListOutputSLZ
-
-    def get_queryset(self) -> QuerySet[TenantUser]:
-        slz = TenantUserContactProfileListInputSLZ(data=self.request.query_params)
-        slz.is_valid(raise_exception=True)
-        data = slz.validated_data
-
-        return TenantUser.objects.filter(
-            id__in=data["bk_usernames"], tenant_id=self.tenant_id, data_source_id=self.real_data_source_id
-        ).select_related("data_source_user")
-
-    @swagger_auto_schema(
-        tags=["open_v3.user"],
-        operation_id="batch_query_user_contact_profile",
-        operation_description="批量查询用户联系信息",
-        query_serializer=TenantUserContactProfileListInputSLZ(),
-        responses={status.HTTP_200_OK: TenantUserContactProfileListOutputSLZ(many=True)},
     )
     def get(self, request, *args, **kwargs):
         return self.list(request, *args, **kwargs)
@@ -357,7 +321,7 @@ class TenantUserLookupApi(OpenApiCommonMixin, generics.ListAPIView):
 
         filter_args = {
             "tenant_id": self.tenant_id,
-            "data_source_id": self.real_data_source_id,
+            "data_source_id__in": self.real_data_source_ids,
         }
 
         if data["lookup_field"] == UserLookupFieldEnum.LOGIN_NAME:

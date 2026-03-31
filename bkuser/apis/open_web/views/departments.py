@@ -17,7 +17,7 @@
 from typing import Any, Dict
 
 from django.conf import settings
-from django.db.models import QuerySet, OuterRef, Exists
+from django.db.models import QuerySet
 from django.shortcuts import get_object_or_404
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import generics, status
@@ -123,13 +123,13 @@ class TenantDepartmentChildrenListApi(OpenWebApiCommonMixin, generics.ListAPIVie
 
         else:
             # 若指定部门 ID 为 0，则其子部门即为根部门
-            data_source = get_object_or_404(
-                DataSource.objects.filter(owner_tenant_id=data["owner_tenant_id"], type=DataSourceTypeEnum.REAL)
+            data_sources = DataSource.objects.filter(
+                owner_tenant_id=data["owner_tenant_id"], type=DataSourceTypeEnum.REAL
             )
 
             data_source_dept_ids = (
                 DataSourceDepartmentRelation.objects.root_nodes()
-                .filter(data_source=data_source)
+                .filter(data_source__in=data_sources)
                 .values_list("department_id", flat=True)
             )
 
@@ -190,21 +190,15 @@ class TenantDepartmentUserListApi(OpenWebApiCommonMixin, generics.ListAPIView):
 
         # 若指定部门 ID 为 0，则返回无部门的用户
         else:
-            data_source = get_object_or_404(
-                DataSource.objects.filter(owner_tenant_id=data["owner_tenant_id"], type=DataSourceTypeEnum.REAL)
+            data_sources = DataSource.objects.filter(
+                owner_tenant_id=data["owner_tenant_id"], type=DataSourceTypeEnum.REAL
             )
-            # 使用 NOT EXISTS 子查询代替 NOT IN,避免将所有部门关联的用户 ID 加载到内存中
-            # NOT EXISTS 可利用索引进行半连接（anti-join），性能远优于 NOT IN 子查询
-            has_dept_relation = DataSourceDepartmentUserRelation.objects.filter(
-                user_id=OuterRef("data_source_user_id"),
-                data_source=data_source,
+
+            user_ids = DataSourceDepartmentUserRelation.objects.filter(data_source__in=data_sources).values_list(
+                "user_id", flat=True
             )
-            queryset = queryset.filter(data_source=data_source).exclude(Exists(has_dept_relation))
-            # user_ids = DataSourceDepartmentUserRelation.objects.filter(data_source=data_source).values_list(
-            #     "user_id", flat=True
-            # )
-            # # TODO: 这里存在比较大的性能问题，如何快速获取无归属部门的用户？
-            # queryset = queryset.filter(data_source=data_source).exclude(data_source_user_id__in=user_ids)
+            # TODO: 这里存在比较大的性能问题，如何快速获取无归属部门的用户？
+            queryset = queryset.exclude(data_source_user_id__in=user_ids)
 
         return queryset
 

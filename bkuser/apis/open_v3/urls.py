@@ -25,7 +25,6 @@ urlpatterns = [
         "tenant/",
         include(
             [
-                # users
                 path(
                     "users/-/display_info/",
                     views.TenantUserDisplayInfoListApi.as_view(),
@@ -57,13 +56,6 @@ urlpatterns = [
                     views.TenantUserLookupApi.as_view(),
                     name="open_v3.tenant_user.lookup",
                 ),
-                # bk-cmsi 专用
-                path(
-                    "users/-/contact-profiles/",
-                    views.TenantUserContactProfileListApi.as_view(),
-                    name="open_v3.tenant_user.contact_profile.list",
-                ),
-                # departments
                 path(
                     "departments/<int:id>/",
                     views.TenantDepartmentRetrieveApi.as_view(),
@@ -89,7 +81,6 @@ urlpatterns = [
                     views.TenantDepartmentLookupListApi.as_view(),
                     name="open_v3.tenant_department.lookup",
                 ),
-                # relations
                 path(
                     "department-user-relations/",
                     views.TenantDepartmentUserRelationListApi.as_view(),
@@ -105,7 +96,6 @@ urlpatterns = [
                     views.TenantUserLeaderRelationListApi.as_view(),
                     name="open_v3.tenant_user_leader_relation.list",
                 ),
-                # virtual users
                 path(
                     "virtual-users/-/lookup/",
                     views.VirtualUserLookupApi.as_view(),
@@ -116,7 +106,6 @@ urlpatterns = [
                     views.VirtualUserListApi.as_view(),
                     name="open_v3.virtual_user.list",
                 ),
-                # common
                 path(
                     "common-variables/",
                     views.TenantCommonVariableListApi.as_view(),
