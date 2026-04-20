@@ -18,7 +18,6 @@
 # ignore custom logger must use %s string format in this file
 # ruff: noqa: G004
 import logging
-import uuid
 from collections import defaultdict
 from typing import Any, DefaultDict, Dict, List
 
@@ -51,7 +50,7 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
     def fetch_departments(self) -> List[RawDataSourceDepartment]:
         """获取部门信息"""
         cfg = self.plugin_config.data_config
-        with LDAPClient(self.plugin_config.server_config, cfg.object_id_attribute) as ldap_client:
+        with LDAPClient(self.plugin_config.server_config, cfg.uuid_attribute) as ldap_client:
             depts = [
                 dept
                 for dn in cfg.dept_search_base_dns
@@ -59,13 +58,13 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
             ]
             self.logger.info(f"fetch {len(depts)} departments from ldap server")
 
-        raw_depts = [self._gen_raw_dept(d, cfg.object_id_attribute) for d in depts]
+        raw_depts = [self._gen_raw_dept(d, cfg.uuid_attribute) for d in depts]
 
         # 启用用户组的情况
         if self.plugin_config.user_group_config.enabled:
             self.logger.info("user group enabled...")
 
-            with LDAPClient(self.plugin_config.server_config, cfg.object_id_attribute) as ldap_client:
+            with LDAPClient(self.plugin_config.server_config, cfg.uuid_attribute) as ldap_client:
                 base_dns = self.plugin_config.user_group_config.search_base_dns
                 obj_cls = self.plugin_config.user_group_config.object_class
                 groups = [g for dn in base_dns for g in ldap_client.fetch_all_objects(dn, obj_cls)]
@@ -80,7 +79,7 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
             self.logger.info(f"found {len(self.user_group_dns_map)} user in group")
 
             # 用户组算是特殊的部门
-            raw_depts.extend([self._gen_raw_dept(g, cfg.object_id_attribute) for g in groups])
+            raw_depts.extend([self._gen_raw_dept(g, cfg.uuid_attribute) for g in groups])
 
         # 检查是否有配置不当 / 数据源异常导致有 Code 重复的情况
         self._validate_duplicate_codes(raw_depts)
@@ -108,14 +107,14 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
             self.logger.warning("dept cache not found, this will cause user not dept infos")
 
         cfg = self.plugin_config.data_config
-        with LDAPClient(self.plugin_config.server_config, cfg.object_id_attribute) as ldap_client:
+        with LDAPClient(self.plugin_config.server_config, cfg.uuid_attribute) as ldap_client:
             users = [
                 u for dn in cfg.user_search_base_dns for u in ldap_client.fetch_all_objects(dn, cfg.user_object_class)
             ]
             self.logger.info(f"fetch {len(users)} users from ldap server")
 
         # 生成的原始用户数据，不含部门，leader 信息
-        raw_users = [self._gen_raw_user(u, cfg.object_id_attribute) for u in users]
+        raw_users = [self._gen_raw_user(u, cfg.uuid_attribute) for u in users]
 
         # 检查是否有配置不当 / 数据源异常导致有 Code 重复的情况
         self._validate_duplicate_codes(raw_users)
@@ -134,7 +133,7 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
         err_msg, user, dept = "", None, None
         user_data, dept_data = None, None
         try:
-            with LDAPClient(self.plugin_config.server_config, cfg.object_id_attribute) as ldap_client:
+            with LDAPClient(self.plugin_config.server_config, cfg.uuid_attribute) as ldap_client:
                 # 连通性测试以第一个 DN 的为准
                 dept_data = ldap_client.fetch_first_object(cfg.dept_search_base_dns[0], cfg.dept_object_class)
                 user_data = ldap_client.fetch_first_object(cfg.user_search_base_dns[0], cfg.user_object_class)
@@ -152,10 +151,10 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
         if not (user_data and dept_data):
             err_msg = _("获取到的用户/部门数据为空，请检查数据源服务")
         else:
-            object_id_attribute = cfg.object_id_attribute
+            uuid_attribute = cfg.uuid_attribute
             try:
-                dept = self._gen_raw_dept(dept_data, object_id_attribute)
-                user = self._gen_raw_user(user_data, object_id_attribute)
+                dept = self._gen_raw_dept(dept_data, uuid_attribute)
+                user = self._gen_raw_user(user_data, uuid_attribute)
             except Exception:
                 err_msg = _("解析用户/部门数据失败，请检查返回的数据格式")
 
@@ -222,7 +221,7 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
         parent_dn = utils.gen_dn(parent) if parent else None
 
         return RawDataSourceDepartment(
-            code=LDAPDataSourcePlugin._get_uuid_value(obj.attrs[id_attribute]),
+            code=obj.attrs[id_attribute],
             name=cur.attr_value,
             # 其实这里的 dn 还不是最终需要的值，需要下一步转换成 entryUUID
             parent=parent_dn,
@@ -230,11 +229,11 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
         )
 
     @staticmethod
-    def _gen_raw_user(obj: LDAPObject, object_id_attribute: str) -> RawDataSourceUser:
+    def _gen_raw_user(obj: LDAPObject, uuid_attribute: str) -> RawDataSourceUser:
         properties: Dict[str, str] = {"dn": obj.dn}
 
         for k, v in obj.attrs.items():
-            if k in [object_id_attribute, "objectClass"]:
+            if k in [uuid_attribute, "objectClass"]:
                 continue
 
             if isinstance(v, list):
@@ -244,7 +243,7 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
 
         # 由于 LDAP 用户数据结果比较特殊，因此生成的时候，不带 leaders，departments 字段，由后续处理
         return RawDataSourceUser(
-            code=LDAPDataSourcePlugin._get_uuid_value(obj.attrs[object_id_attribute]),
+            code=obj.attrs[uuid_attribute],
             properties=properties,
             leaders=[],
             departments=[],
@@ -274,26 +273,6 @@ class LDAPDataSourcePlugin(BaseDataSourcePlugin):
                 raise ValueError(f"duplicate code `{obj.code}` found, check your ldap search base dn config!")
 
             exist_codes.add(obj.code)
-
-    @staticmethod
-    def _get_uuid_value(value: bytes | str | list) -> str:
-        """获取 LDAP 条目的唯一标识值
-
-        ldap3 返回的属性值可能是列表，若为列表则取首个值；
-        Active Directory 的 objectGUID 返回的是二进制数据，需要转换为 UUID 字符串；
-        """
-        if isinstance(value, list):
-            value = value[0] if value else ""
-
-        if isinstance(value, bytes):
-            try:
-                return str(uuid.UUID(bytes_le=value))
-            except ValueError as e:
-                raise ValueError(f"invalid LDAP UUID bytes value: {value!r}") from e
-
-        if not value:
-            raise ValueError("LDAP id attribute is empty")
-        return str(value)
 
     @staticmethod
     def _safe_str_value(value: Any) -> str:
