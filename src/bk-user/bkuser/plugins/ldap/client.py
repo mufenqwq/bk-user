@@ -27,9 +27,9 @@ from bkuser.plugins.ldap.models import LDAPObject, ServerConfig
 class LDAPClient:
     """LDAP 客户端"""
 
-    def __init__(self, server_config: ServerConfig, object_id_attribute: str = "entryUUID"):
+    def __init__(self, server_config: ServerConfig, uuid_attribute: str = "entryUUID"):
         self.server_config = server_config
-        self.object_id_attribute = object_id_attribute
+        self.uuid_attribute = uuid_attribute
 
     def __enter__(self):
         self._conn = self._gen_conn(self.server_config)
@@ -67,7 +67,7 @@ class LDAPClient:
             search_filter=f"(objectclass={object_class})",
             dereference_aliases=DEREF_NEVER,
             get_operational_attributes=False,
-            attributes=[ALL_ATTRIBUTES, self.object_id_attribute],
+            attributes=[ALL_ATTRIBUTES, self.uuid_attribute],
             paged_size=page_size,
         )
         # 丢弃多余的信息，如 type，raw_dn，raw_attributes 等
