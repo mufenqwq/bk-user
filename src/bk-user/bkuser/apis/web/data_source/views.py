@@ -58,6 +58,7 @@ from bkuser.apps.data_source.models import (
     DataSourcePlugin,
     DataSourceSensitiveInfo,
     DataSourceUser,
+    DataSourceUsernameGenerateConfig,
 )
 from bkuser.apps.idp.constants import INVALID_REAL_DATA_SOURCE_ID, IdpStatus
 from bkuser.apps.idp.models import Idp, IdpSensitiveInfo
@@ -70,7 +71,7 @@ from bkuser.apps.sync.models import DataSourceSyncTask, TenantSyncTask
 from bkuser.apps.tenant.models import TenantDepartment, TenantUser
 from bkuser.biz.auditor import DataSourceAuditor
 from bkuser.biz.data_source import DataSourceHandler
-from bkuser.biz.exporters import DataSourceUserExporter
+from bkuser.biz.exporters import DataSourceUserExporter, get_user_export_template
 from bkuser.common.error_codes import error_codes
 from bkuser.common.passwd import PasswordGenerator
 from bkuser.common.response import convert_workbook_to_response
@@ -142,8 +143,8 @@ class DataSourceListCreateApi(CurrentUserTenantMixin, generics.ListCreateAPIView
         data = slz.validated_data
 
         queryset = DataSource.objects.filter(owner_tenant_id=self.get_current_tenant_id())
-        if type := data.get("type"):
-            queryset = queryset.filter(type=type)
+        if data_source_type := data.get("type"):
+            queryset = queryset.filter(type=data_source_type)
 
         return queryset
 
@@ -182,6 +183,13 @@ class DataSourceListCreateApi(CurrentUserTenantMixin, generics.ListCreateAPIView
                 sync_config=data.get("sync_config") or {},
                 creator=current_user,
                 updater=current_user,
+            )
+
+            DataSourceUsernameGenerateConfig.objects.create(
+                data_source=ds,
+                rule=data["username_generate_config"]["rule"],
+                prefix=data["username_generate_config"]["prefix"],
+                suffix=data["username_generate_config"]["suffix"],
             )
 
         # 【审计】创建数据源审计对象
@@ -427,13 +435,8 @@ class DataSourceTemplateApi(CurrentUserTenantDataSourceMixin, generics.ListAPIVi
         responses={status.HTTP_200_OK: "org_tmpl.xlsx"},
     )
     def get(self, request, *args, **kwargs):
-        """数据源导出模板"""
-        # 获取数据源信息，用于后续填充模板中的自定义字段
-        data_source = self.get_object()
-        if not (data_source.is_local and data_source.is_real_type):
-            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("仅实体类型的本地数据源有提供导入模板"))
-
-        workbook = DataSourceUserExporter(data_source).get_template()
+        """本地数据源导出模板"""
+        workbook = get_user_export_template(self.get_current_tenant_id())
         return convert_workbook_to_response(workbook, f"{settings.EXPORT_EXCEL_FILENAME_PREFIX}_org_tmpl.xlsx")
 
 
@@ -576,16 +579,16 @@ class DataSourceSyncRecordListApi(CurrentUserTenantMixin, generics.ListAPIView):
         slz.is_valid(raise_exception=True)
         data = slz.validated_data
 
-        data_source = DataSource.objects.filter(
-            owner_tenant_id=self.get_current_tenant_id(), id=self.kwargs["id"]
-        ).first()
-        if not data_source:
-            raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("数据源不存在"))
+        cur_tenant_id = self.get_current_tenant_id()
 
-        if not data_source.is_real_type:
-            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("仅实体类型的数据源有同步记录"))
+        queryset = DataSourceSyncTask.objects.filter(
+            data_source__owner_tenant_id=cur_tenant_id,
+            data_source__type=DataSourceTypeEnum.REAL,
+        ).select_related("data_source__plugin")
 
-        queryset = DataSourceSyncTask.objects.filter(data_source=data_source)
+        if plugin_id := data.get("plugin_id"):
+            queryset = queryset.filter(data_source__plugin_id=plugin_id)
+
         if statuses := data.get("statuses"):
             queryset = queryset.filter(status__in=statuses)
 
