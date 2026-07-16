@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "2cf3c0a424f06da6e0a8d433ebb01c093999058b",
+  "prompts": {},
+  "humans": {
+    "h_5e7459f4615738": {
+      "author": "mufen <wangpan910@gmail.com>"
+    }
+  }
+}
