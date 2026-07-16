@@ -1,0 +1,14 @@
+src/bk-user/bkuser/apis/open_v2/views/profilers.py
+  h_5e7459f4615738 475-479,514-536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "5096311a482a95852445faac7e45fa2b0d688050",
+  "prompts": {},
+  "humans": {
+    "h_5e7459f4615738": {
+      "author": "mufen <wangpan910@gmail.com>"
+    }
+  }
+}
