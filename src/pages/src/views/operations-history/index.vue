@@ -8,13 +8,23 @@
           :class="['filter-operation-history-container', isFold.preFold ? 'overflow-hidden' : '']">
           <bk-form
             form-type="vertical"
+            ref="formRef"
             :model="formData"
             class="w-full mt-[24px]">
             <bk-form-item class="inline-block ml-[24px]" :label="$t('操作人')">
-              <UserSelector
-                class="!w-[300px]"
-                v-model:value="formData.creator"
-                :multiple="false" />
+              <MemberSelector
+                class="w-[300px]"
+                :state="realUsers"
+                :params="params"
+                :show-on-init="false"
+                v-model:modelValue="curMember"
+                :disabled="true"
+                :multiple="false"
+                :clearable="true"
+                @change-select-list="changeSelectList"
+                @search-user-list="fetchRealUsers"
+                @scroll-change="scrollChange"
+              />
             </bk-form-item>
             <bk-form-item class="inline-block ml-[20px]" :label="$t('操作对象')">
               <bk-select class="items-select" v-model="formData.object_type">
@@ -38,10 +48,7 @@
               <bk-input class="items-input" clearable v-model="formData.object_name" />
             </bk-form-item>
             <bk-form-item class="inline-block ml-[24px]" :label="$t('操作时间')">
-              <bk-date-picker
-                class="items-picker"
-                v-model="formData.operation_time"
-                type="datetimerange" />
+              <bk-date-picker class="items-picker" v-model="formData.created_at" type="datetime" />
             </bk-form-item>
             <bk-form-item class="ml-[24px]">
               <bk-button
@@ -93,81 +100,54 @@
       </div>
       <!-- 展示列表 -->
       <div class="data-operation-history-container">
-        <Table
+        <bk-table
           v-bkloading="{ loading: isLoading }"
           :pagination="pagination"
+          remote-pagination
           :data="tableData"
           :settings="settings"
-          :show-settings="true"
-          :max-height="curTableMaxHeight"
-          :height="curTableHeight"
-          :virtual-y-config="{ enabled: true, gt: 10 }"
-          :sort-config="sortConfig"
           class="operation-history-table"
           @page-limit-change="pageLimitChange"
           @page-value-change="pageCurrentChange"
+          :show-overflow-tooltip="true"
+          :max-height="curTableMaxHeight"
+          :height="curTableHeight"
+          :pagination-height="paginationHeight"
+          :thead="{ height: headHeight }"
+          :row-height="lineHeight"
           @setting-change="handleSettingChange"
+          @column-sort="handleSortBy"
         >
-          <template #empty>
-            <Empty
-              :type="curExceptionType"
-              @clear="handleReset"
-              @refresh="handleFetchAudit('search')"
-            />
-          </template>
-          <TableColumn
-            field="operation"
-            :label="$t('操作类型')"
-            show-overflow="tooltip"
-            :min-width="100"
-          >
+          <bk-table-column :label="$t('操作类型')" prop="operation" width="100">
             <template #default="{ row }">
               <span>{{ getOperationLabel(row.operation) }}</span>
             </template>
-          </TableColumn>
-
-          <TableColumn
-            field="object_type"
-            :label="$t('操作对象')"
-            show-overflow="tooltip"
-            :min-width="100"
-          >
+          </bk-table-column>
+          <bk-table-column :label="$t('操作对象')" prop="object_type" width="100">
             <template #default="{ row }">
               <span>{{ getOperationTypeLabel(row.object_type) }}</span>
             </template>
-          </TableColumn>
-          <TableColumn
-            field="object_name"
-            :label="$t('操作实例')"
-            show-overflow="tooltip"
-            :min-width="100"
-          >
+          </bk-table-column>
+          <bk-table-column :label="$t('操作实例')" prop="object_name" width="100">
             <template #default="{ row }">
               <span>{{ row.object_name || '--' }}</span>
             </template>
-          </TableColumn>
-          <TableColumn
-            field="creator"
-            :label="$t('操作人')"
-            show-overflow="tooltip"
-            :min-width="100"
-          >
+          </bk-table-column>
+          <bk-table-column :label="$t('操作人')" prop="creator" width="100">
             <template #default="{ row }">
-              <DisplayName :user-id="row.creator" />
+              <span>{{ row.creator || '--' }}</span>
             </template>
-          </TableColumn>
-          <TableColumn
-            field="created_at"
+          </bk-table-column>
+          <bk-table-column
             :label="$t('操作时间')"
-            sortable
-            show-overflow="tooltip"
-            :min-width="100"
-          >
+            :sort="sortConfig"
+            prop="created_at"
+            width="100">
             <template #default="{ row }">
               <span>{{ row.created_at || '--' }}</span>
             </template>
-          </TableColumn>
-        </Table>
+          </bk-table-column>
+        </bk-table>
       </div>
     </div>
   </div>
@@ -177,18 +157,27 @@
 import dayjs from 'dayjs';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
-import { Table, TableColumn } from '@blueking/table';
-
 import { getCurrentOperationOptions, operationType } from './operations';
 
-import 'tippy.js/dist/tippy.css';
-import 'tippy.js/themes/light.css';
-import DisplayName from '@/components/display-name.vue';
-import Empty from '@/components/SearchEmpty.vue';
-import UserSelector from '@/components/UserSelector.vue';
+import MemberSelector from '@/components/MemberSelector.vue';
 import { useTableMaxHeight } from '@/hooks';
-import useTableEmpty from '@/hooks/use-table-empty';
 import { getAudit } from '@/http/operationHistoryFiles';
+import { getRealUsers } from '@/http/settingFiles';
+import { t } from '@/language';
+
+// 人员选择器
+const curMember = ref('');
+const realUsers = ref({
+  count: 0,
+  results: [],
+});
+// 请求人员数据参数
+const params = reactive({
+  page: 1,
+  page_size: 10,
+  keyword: '',
+  exclude_manager: true,
+});
 
 const isHover = ref(false);
 const isFold = reactive({
@@ -196,21 +185,20 @@ const isFold = reactive({
   preFold: false,
 });
 
+const formRef = ref();
 const isLoading = ref(false);
 const tableData = ref([]);
 
-// const lineHeight = ref(42);
-const rowHeightSizeMap: Record<string, number> = {
-  mini: 36,
-  small: 40,
-  medium: 44,
-};
-// // 使用max-height来限制表格高度
+// 固定表头行高分页器高度，便于切换行高时计算高度
+const paginationHeight = 60;
+const headHeight = 42;
+const lineHeight = ref(42);
+// 使用max-height来限制表格高度
 const curTableMaxHeight = computed(() => {
   // header(52) + button-height(24) + margin-bottom(24) 固定表格最大高度，对当前高度进行响应式计算，纵享丝滑
   const tableMaxHeight = window.innerHeight - 100;
   // 计算当前分页下table高度
-  const targetTableHeight = 42 + (rowHeightSizeMap?.[settings.size] || 0) * pagination.limit + 62;
+  const targetTableHeight = headHeight + lineHeight.value * pagination.limit + paginationHeight;
   // 若超出页面允许的最大高度，返回最大高度，否则返回数据铺满高度，防止出现空白区域未铺满数据的情况
   if (targetTableHeight < tableMaxHeight) return targetTableHeight;
   return tableMaxHeight;
@@ -230,72 +218,119 @@ const curRedundantHeight = computed(() => {
 const curTableHeight = useTableMaxHeight(curRedundantHeight);
 
 // 更改表格设置时，更新当前行高
-const handleSettingChange = (data: any) => {
-  settings.size = data.size as string;
+const handleSettingChange = (data: { height: number; }) => {
+  lineHeight.value = data.height;
 };
 
-interface SearchFromData {
+interface SearchParams {
   creator: string,
   operation: string,
   object_type: string,
   object_name: string,
-  operation_time: [string, string]
+  created_at: string,
 }
 
-const formData = reactive<SearchFromData>({
+const formData = reactive<SearchParams>({
   creator: '',  // 操作人
   operation: '', // 操作类型
   object_type: '', // 操作对象
   object_name: '', // 操作实例
-  operation_time: ['', ''], // 操作时间
+  created_at: '', // 操作时间
 });
+const curSearchParams: SearchParams = {
+  creator: '',  // 操作人
+  operation: '', // 操作类型
+  object_type: '', // 操作对象
+  object_name: '', // 操作实例
+  created_at: '', // 操作时间
+};
 
-const sortConfig = reactive({
-  multiple: false,
-  trigger: 'cell',
-});
-const settings = reactive({
+const sortType = ref('null');
+const sortConfig = computed(() => ({ SortScope: 'all', value: sortType.value }));
+const settings = {
+  fields: [
+    {
+      label: t('操作类型'),
+      field: 'operation',
+    },
+    {
+      label: t('操作对象'),
+      field: 'object_type',
+    },
+    {
+      label: t('操作实例'),
+      field: 'object_name',
+    },
+    {
+      label: t('操作人'),
+      field: 'creator',
+    },
+    {
+      label: t('操作时间'),
+      field: 'created_at',
+    },
+  ],
   checked: ['operation', 'object_type', 'object_name', 'creator', 'created_at'],
-  size: 'small',
-});
+};
 const pagination = reactive({
   current: 1,
   count: 0,
   limit: 10,
   limitList: [10, 20, 50],
-  remote: true,
 });
 
-const { setTypeToError, clearErrorType, curExceptionType } = useTableEmpty({
-  filters: formData,
-});
+// 获取人员选择器数据
+const initCreator = async () => {
+  const res = await getRealUsers({
+    exclude_manager: params.exclude_manager,
+  });
+  realUsers.value = res.data;
+};
+
+// 人员选择器选择回调方法
+const changeSelectList = (values: string) => {
+  formData.creator = values;
+};
+// 人员选择器分页请求数据处理
+const scrollChange = () => {
+  params.page += 1;
+  getRealUsers(params).then((res) => {
+    realUsers.value.count = res.data.count;
+    realUsers.value.results.push(...res.data.results);
+  });
+};
+// 获取人员选择器列表
+const fetchRealUsers = (value: string) => {
+  params.keyword = value;
+  params.page = 1;
+  getRealUsers(params).then((res) => {
+    realUsers.value = res.data;
+  });
+};
 
 // 获取audit数据
 const handleFetchAudit = async (type = '') => {
   try {
     isLoading.value = true;
-    clearErrorType();
-    const isSearch = type === 'search';
-    if (isSearch) {
+    if (type === 'search') {
       pagination.count = 0;
       pagination.current = 1;
+      curSearchParams.operation = formData.operation;
+      curSearchParams.object_type = formData.object_type;
+      curSearchParams.object_name = formData.object_name;
+      curSearchParams.creator = formData.creator;
+      curSearchParams.created_at = formData.created_at ? dayjs(formData.created_at).format('YYYY-MM-DD HH:mm:ss') : '';
     }
     const params = {
       page: pagination.current,
-      page_size: pagination.limit,
-      operation: formData.operation,
-      object_type: formData.object_type,
-      object_name: formData.object_name,
-      creator: formData.creator,
-      start_at: formData.operation_time[0] ? dayjs(formData.operation_time[0]).format('YYYY-MM-DD HH:mm:ss') : '',
-      end_at: formData.operation_time[1] ? dayjs(formData.operation_time[1]).format('YYYY-MM-DD HH:mm:ss') : '',
+      pageSize: pagination.limit,
+      ...curSearchParams,
     };
     const res = await getAudit(params);
     pagination.count = res.data?.count;
     tableData.value = res.data?.results;
   } catch (e) {
     console.warn(e);
-    setTypeToError();
   } finally {
     isLoading.value = false;
   }
@@ -304,7 +339,6 @@ const handleFetchAudit = async (type = '') => {
 // pageSize更改回调方法
 const pageLimitChange = (pageSize: number) => {
   pagination.limit = pageSize;
-  pagination.current = 1;
   handleFetchAudit();
 };
 
@@ -312,6 +346,10 @@ const pageLimitChange = (pageSize: number) => {
 const pageCurrentChange = (page: number) => {
   pagination.current = page;
   handleFetchAudit();
+};
+
+const handleSortBy = (curSort: any) => {
+  sortType.value = curSort.type;
 };
 
 // 折叠button处理
@@ -324,11 +362,12 @@ const toggleFold = () => {
 };
 
 const handleReset = () => {
-  formData.operation_time = ['', ''];
+  formData.created_at = '';
   formData.creator = '';
   formData.object_name = '';
   formData.object_type = '';
   formData.operation = '';
+  curMember.value = '';
   handleFetchAudit('search');
 };
 
@@ -392,6 +431,7 @@ watch(() => formData.object_type, (value) => {
 
 onMounted(() => {
   handleFetchAudit();
+  initCreator();
 });
 
 </script>
@@ -435,12 +475,5 @@ onMounted(() => {
 .v-enter-from,
 .v-leave-to {
   height: 0px;
-}
-</style>
-
-<style lang="less">
-/* 隐藏setting Tab的滚动条 */
-.action-tab-wrapper {
-  overflow-y: auto !important;
 }
 </style>
