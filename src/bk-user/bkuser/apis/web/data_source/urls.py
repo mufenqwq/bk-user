@@ -62,7 +62,7 @@ urlpatterns = [
         views.DataSourceSyncRecordRetrieveApi.as_view(),
         name="data_source.sync_record.retrieve",
     ),
-    # 获取用户信息导入模板
+    # 获取用户信息导入模板（租户级，创建页无需 data_source_id）
     path(
         "operations/download_template/",
         views.DataSourceTemplateApi.as_view(),
@@ -73,6 +73,12 @@ urlpatterns = [
         "<int:id>/",
         views.DataSourceRetrieveUpdateDestroyApi.as_view(),
         name="data_source.retrieve_update_destroy",
+    ),
+    # 数据源批量删除
+    path(
+        "operations/batch-delete/",
+        views.DataSourceBatchDeleteApi.as_view(),
+        name="data_source.batch_delete",
     ),
     # 数据源关联资源查询
     path(
