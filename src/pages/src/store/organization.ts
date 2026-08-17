@@ -52,7 +52,6 @@ export default defineStore('organization', () => {
   const reloadIndex = ref(1);
   /**
    * 是否配置了本地数据源
-   * @description 数据源配置允许有一个本地数据源和一个外部数据源
    */
   const isConfiguredLocalSource = computed(() => currentTenant.value.data_sources?.some(item => item.plugin_id === 'local'));
 

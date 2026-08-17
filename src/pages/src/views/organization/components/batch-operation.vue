@@ -196,8 +196,6 @@ const organizationStore = useOrganizationStore();
 const isSelectedNotLocalSource = computed(() => (
   props.selectList.some(item => !organizationStore.isEqualLocalSourceId(item.data_source_id))
 ));
-/** 当前数据源是否为本地数据源 */
-const isLocalDataSource = computed(() => organizationStore.curSelectedDataSource?.plugin_id === 'local');
 
 const userIds = computed(() => props.selectList.map((item: any) => item.id as string));
 const state = reactive({
@@ -341,17 +339,8 @@ const handleBatchRenewal = () => {
 };
 
 onMounted(async () => {
-  const [fieldsRes, leadersRes] = await Promise.all([
-    getFields(),
-    isLocalDataSource.value
-      ? optionalLeaderList({
-        data_source_id: props.dataSourceId,
-        exclude_user_id: '',
-      })
-      : Promise.resolve([]),
-  ]);
+  const fieldsRes = await getFields();
   extrasList.value = fieldsRes.data.custom_fields;
-  leaderList.value = leadersRes.data;
   extrasList.value.forEach((item) => {
     userInfoOptions.value.push({
       text: item.display_name,
@@ -361,6 +350,25 @@ onMounted(async () => {
     });
   });
 });
+
+/**
+ * 切换数据源时重新拉取可选 leader 列表
+ * @description 多数据源场景下，leader 列表需随当前选中的数据源实例变化而刷新
+ */
+watch(() => props.dataSourceId, (dataSourceId) => {
+  leaderList.value = [];
+  if (dataSourceId !== undefined && organizationStore.isEqualLocalSourceId(dataSourceId)) {
+    optionalLeaderList({
+      data_source_id: dataSourceId,
+      exclude_user_id: '',
+    }).then((res) => {
+      leaderList.value = res.data;
+    })
+      .catch((e) => {
+        console.error(e);
+      });
+  }
+}, { immediate: true });
 
 watch(infoFormData, (val) => {
   val?.customField?.forEach((item) => {
