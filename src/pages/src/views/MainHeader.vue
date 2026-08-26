@@ -139,8 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { DownShape } from 'bkui-vue/lib/icon';
-import { computed, onMounted, provide, reactive, ref } from 'vue';
+import { computed, provide, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import BkLoginUserinfo, { ActionItem } from '@blueking/login-userinfo';
@@ -319,17 +318,24 @@ const openVersionLog = async () => {
   }
 };
 
-onMounted(() => {
-  initHeaderNav();
-  if (role.value && role.value !== ROLE.NATURAL_USER) {
+// role 与 route.name 均就绪后初始化顶部导航，避免异步加载导致的初始化时机问题
+watch([role, () => route.name], ([newRole, routeName]) => {
+  if (newRole && routeName) {
+    initHeaderNav();
+  }
+}, { immediate: true });
+
+// role 有值后初始化租户信息，避免 onMounted 时 role 未就绪（如网络波动）导致永不调用
+watch(role, (newRole) => {
+  if (newRole && newRole !== ROLE.NATURAL_USER) {
     initTenantInfo();
   }
-});
+}, { immediate: true });
 </script>
 
 <style lang="less" scoped>
 .has-alert {
-  height: calc(100vh - 40px);
+  height: calc(100vh - var(--alert-height));
 }
 
 .main-navigation {
@@ -417,7 +423,7 @@ onMounted(() => {
 .main-navigation-left {
   margin-left: 20px;
   font-size: 14px;
-  line-height: 52px;
+  line-height: var(--header-height);
 }
 
 .main-navigation-nav {

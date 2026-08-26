@@ -73,3 +73,15 @@ declare module 'js-cookie' {
   const Cookies: CookiesStatic;
   export default Cookies;
 }
+
+// @blueking/sub-saas 模块类型声明（npm 包未发布 typings 目录，此处兜底声明）
+declare module '@blueking/sub-saas' {
+  import type { Router } from 'vue-router';
+
+  /** 子系统根路径：以 /sub 前缀访问时为 /sub/，否则为 / */
+  export const rootPath: string;
+  /** 是否处于 iframe 嵌入环境（被主系统以 /sub 路径加载） */
+  export const subEnv: boolean;
+  /** 子系统路由与主系统联动（postMessage 通信） */
+  export function connectToMain(router: Router): void;
+}

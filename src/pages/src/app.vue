@@ -18,6 +18,9 @@ import { platformConfig, useUser } from '@/store';
 import Password from '@/views/reset-password/index.vue';
 import ResetPassword from '@/views/reset-password/newPassword.vue';
 
+// iframe 嵌入（subEnv）时隐藏顶部导航，仅渲染业务内容
+withDefaults(defineProps<{ hideHeader?: boolean }>(), { hideHeader: false });
+
 const router = useRouter();
 
 const showName = ref(null);
@@ -170,7 +173,10 @@ onBeforeMount(() => {
           'main-loading': isLoading
         }"
       >
-        <HeaderBox v-if="!isLoading" />
+        <HeaderBox v-if="!isLoading && !hideHeader" />
+        <div v-else-if="!isLoading" class="iframe-router-view">
+          <router-view />
+        </div>
       </bk-loading>
     </bk-config-provider>
   </div>

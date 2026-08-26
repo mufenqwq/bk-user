@@ -1,6 +1,6 @@
 <template>
   <MainView>
-    <template #menu>
+    <template v-if="!subEnv" #menu>
       <bk-menu
         :active-key="activeKey"
         :collapse="menuStore.collapsed"
@@ -36,6 +36,8 @@
 <script setup lang="ts">
 import { onMounted, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+
+import { subEnv } from '@blueking/sub-saas';
 
 import MainView from '@/components/layouts/MainView.vue';
 import { useMenuInfo } from '@/hooks';
@@ -163,7 +165,7 @@ onMounted(() => {
         router.removeRoute(routeKey);
 
         if (route.name === routeKey) {
-          router.push('/setting');
+          router.push({ name: 'setting' });
         }
       }
     }

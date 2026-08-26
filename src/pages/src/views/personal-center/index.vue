@@ -979,7 +979,7 @@ onUnmounted(() => {
 
 <style lang="less" scoped>
 .personal-center-wrapper {
-  height: calc(100vh - 52px);
+  height: calc(100vh - var(--header-height));
   min-width: 1600px;
 
   .personal-center-main {

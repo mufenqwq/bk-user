@@ -443,11 +443,11 @@ onMounted(async () => {
 
 <style lang="less" scoped>
 .has-alert {
-  height: calc(100vh - 144px) !important;
+  height: calc(100vh - var(--header-height) - var(--breadcrumbs-height) - var(--alert-height)) !important;
 }
 
 .data-source-card {
-  height: calc(100vh - 92px);
+  height: calc(100vh - var(--header-height) - var(--breadcrumbs-height));
   padding: 16px 24px;
 
   .tag-style {

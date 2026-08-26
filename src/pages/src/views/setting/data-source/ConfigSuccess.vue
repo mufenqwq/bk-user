@@ -67,7 +67,7 @@ const viewOrganization = () => {
 .success-wrapper {
   position: relative;
   width: 100%;
-  height: calc(100vh - 136px);
+  height: calc(100vh - var(--header-height) - var(--breadcrumbs-height) - 32px);
   min-height: 400px;
   text-align: center;
   background: #fff;

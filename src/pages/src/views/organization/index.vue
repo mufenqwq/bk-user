@@ -2,7 +2,7 @@
   <blank-page v-if="isShow"></blank-page>
   <bk-resize-layout
     v-else
-    class="h-[calc(100vh-52px)] user-aside"
+    class="h-[calc(100vh-var(--header-height))] user-aside"
     immediate
     :min="280"
     :max="400"
@@ -19,7 +19,7 @@
         v-show="!organizationStore.isSearchTree"
         :key="organizationStore.reloadIndex"
         placement="top"
-        style="height: calc(100vh - 106px)"
+        style="height: calc(100vh - var(--header-height) - 54px)"
         :border="false"
         immediate
         :initial-divide="isShowCollaboration ? '50%' : '100%'">
@@ -124,7 +124,7 @@ onMounted(async () => {
 
 <style lang="postcss" scoped>
 .table-main {
-  height: calc(100vh - 170px);
+  height: calc(100vh - var(--header-height) - var(--breadcrumbs-height) - 66px);
 }
 
 :deep(.bk-node-row) {

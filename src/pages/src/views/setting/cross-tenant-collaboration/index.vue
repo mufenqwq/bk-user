@@ -37,10 +37,13 @@ const active = ref(router.currentRoute.value.query.tab ?? 'local');
 
 <style lang="less" scoped>
 .tab-wrapper {
+  // 顶部固定开销 = 面包屑 + tab 头（引用 --header-height，iframe 嵌入时自动归零）
+  --header-total: calc(var(--header-height) + var(--breadcrumbs-height) + var(--tab-height));
+
   :deep(.bk-tab-header) {
     padding-left: 24px;
     font-size: 14px;
-    line-height: 36px !important;
+    line-height: var(--tab-height) !important;
     background: #fff;
     border-bottom: none;
     box-shadow: 0 3px 4px 0 rgb(0 0 0 / 4%);
