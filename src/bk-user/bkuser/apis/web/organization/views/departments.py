@@ -149,7 +149,7 @@ class TenantDepartmentListCreateApi(CurrentUserTenantDataSourceMixin, generics.L
 
     @swagger_auto_schema(
         tags=["organization.department"],
-        operation_description="获取指定用户在当前租户的部门列表",
+        operation_description="获取指定租户在当前租户的部门列表",
         query_serializer=TenantDepartmentListInputSLZ(),
         responses={status.HTTP_200_OK: TenantDepartmentListOutputSLZ(many=True)},
     )
@@ -170,7 +170,7 @@ class TenantDepartmentListCreateApi(CurrentUserTenantDataSourceMixin, generics.L
     @swagger_auto_schema(
         tags=["organization.department"],
         operation_description="创建租户部门",
-        query_serializer=TenantDepartmentCreateInputSLZ(),
+        request_body=TenantDepartmentCreateInputSLZ(),
         responses={status.HTTP_201_CREATED: TenantDepartmentCreateOutputSLZ()},
     )
     def post(self, request, *args, **kwargs):

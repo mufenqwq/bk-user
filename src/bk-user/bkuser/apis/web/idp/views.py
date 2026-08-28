@@ -376,11 +376,12 @@ class LocalIdpRetrieveUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin
     def put(self, request, *args, **kwargs):
         idp = self.get_object()
         current_tenant_id = self.get_current_tenant_id()
-        # Note: 取本地数据源，用于获取敏感信息供校验回填
-        primary_data_source = IdpDataSourceRelationHandler.get_primary_real_data_source(
+        # Note: 取变更前的生效范围，首个数据源用于获取敏感信息供校验回填，
+        #       被移出生效范围的数据源需要在变更时关闭密码功能
+        cur_data_sources = IdpDataSourceRelationHandler.get_related_real_data_sources(
             idp, data_source_plugin_id=DataSourcePluginEnum.LOCAL
         )
-        if not primary_data_source:
+        if not cur_data_sources:
             raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("数据源未配置或非本地类型数据源"))
 
         slz = LocalIdpUpdateInputSLZ(
@@ -388,17 +389,22 @@ class LocalIdpRetrieveUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin
             context={
                 "tenant_id": current_tenant_id,
                 "idp_id": idp.id,
-                "exists_sensitive_infos": DataSourceSensitiveInfo.objects.filter(data_source=primary_data_source),
+                "exists_sensitive_infos": DataSourceSensitiveInfo.objects.filter(data_source=cur_data_sources[0]),
             },
         )
         slz.is_valid(raise_exception=True)
         data = slz.validated_data
-        data_sources = DataSource.objects.filter(
-            id__in=data["data_source_ids"],
-            owner_tenant_id=current_tenant_id,
-            type=DataSourceTypeEnum.REAL,
-            plugin_id=DataSourcePluginEnum.LOCAL,
+        data_sources = list(
+            DataSource.objects.filter(
+                id__in=data["data_source_ids"],
+                owner_tenant_id=current_tenant_id,
+                type=DataSourceTypeEnum.REAL,
+                plugin_id=DataSourcePluginEnum.LOCAL,
+            )
         )
+
+        data_source_ids = {ds.id for ds in data_sources}
+        removed_data_sources = [ds for ds in cur_data_sources if ds.id not in data_source_ids]
 
         plugin_config = data["plugin_config"]
         assert isinstance(plugin_config, LocalDataSourcePluginConfig)
@@ -408,7 +414,7 @@ class LocalIdpRetrieveUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin
         idp_auditor.pre_record_data_before(idp)
         # 【审计】创建数据源审计对象并记录变更前数据（本地数据源插件配置）
         ds_auditors = []
-        for data_source in data_sources:
+        for data_source in data_sources + removed_data_sources:
             ds_auditor = DataSourceAuditor(request.user.username, data_source.owner_tenant_id)
             ds_auditor.pre_record_data_before(data_source)
             ds_auditors.append((ds_auditor, data_source))
@@ -423,6 +429,13 @@ class LocalIdpRetrieveUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin
 
             for data_source in data_sources:
                 data_source.set_plugin_cfg(data["plugin_config"])
+
+            # 被移出生效范围的数据源，其用户已无法本地登录，需要同步关闭密码功能
+            for data_source in removed_data_sources:
+                removed_plugin_config = data_source.get_plugin_cfg()
+                assert isinstance(removed_plugin_config, LocalDataSourcePluginConfig)
+                removed_plugin_config.enable_password = False
+                data_source.set_plugin_cfg(removed_plugin_config)
 
         # 【审计】将审计记录保存至数据库
         idp_auditor.record_update(idp)

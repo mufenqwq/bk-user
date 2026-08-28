@@ -332,30 +332,30 @@ class DataSourceRetrieveUpdateDestroyApi(
 
 
 class DataSourceBatchDeleteApi(CurrentUserTenantMixin, generics.DestroyAPIView):
-    """全部重置：删除当前租户下全部实名数据源及关联资源"""
+    """批量删除当前租户下指定的实名数据源及关联资源"""
 
     permission_classes = [IsAuthenticated, perm_class(PermAction.MANAGE_TENANT)]
 
     @swagger_auto_schema(
         tags=["data_source"],
-        operation_description="重置全部数据源",
+        operation_description="批量重置数据源",
         query_serializer=DataSourceBatchDeleteInputSLZ(),
         responses={status.HTTP_204_NO_CONTENT: ""},
     )
     def delete(self, request, *args, **kwargs):
         tenant_id = self.get_current_tenant_id()
 
-        slz = DataSourceBatchDeleteInputSLZ(data=request.query_params)
+        slz = DataSourceBatchDeleteInputSLZ(data=request.query_params, context={"tenant_id": tenant_id})
         slz.is_valid(raise_exception=True)
         is_delete_idp = slz.validated_data["is_delete_idp"]
+        deleting_ds_ids = set(slz.validated_data["data_source_ids"])
 
-        data_sources = list(DataSource.objects.filter(owner_tenant_id=tenant_id, type=DataSourceTypeEnum.REAL))
-        if not data_sources:
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        deleting_ds_ids = {ds.id for ds in data_sources}
         idp_deletion_plan = IdpDataSourceRelationHandler.classify_idps_for_deletion(
             tenant_id, deleting_ds_ids, is_delete_idp
+        )
+
+        data_sources = list(
+            DataSource.objects.filter(id__in=deleting_ds_ids, owner_tenant_id=tenant_id, type=DataSourceTypeEnum.REAL)
         )
 
         # 【审计】创建数据源审计对象并记录变更前数据

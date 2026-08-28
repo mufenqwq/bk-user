@@ -108,14 +108,6 @@ class IdpDataSourceRelationHandler:
         ]
 
     @staticmethod
-    def get_primary_real_data_source(idp: Idp, data_source_plugin_id: str | None = None) -> DataSource | None:
-        """获取 IDP 关联的首个（主）实名数据源，无关联时返回 None"""
-        data_sources = IdpDataSourceRelationHandler.get_related_real_data_sources(
-            idp, data_source_plugin_id=data_source_plugin_id
-        )
-        return data_sources[0] if data_sources else None
-
-    @staticmethod
     def get_real_idp_ids(
         owner_tenant_id: str, idp_plugin_id: str | None = None, data_source_plugin_id: str | None = None
     ) -> List[str]:
@@ -335,13 +327,18 @@ class IdpDataSourceRelationHandler:
     def set_local_real_relations(idp: Idp, data_sources: List[DataSource]) -> None:
         """为本地登录源建立与同租户指定本地实名数据源的关系，并使用默认匹配规则。
 
-        先清除旧关系再全量重建，适用于初始化或数据源变更后的关系重置场景。
+        - 先清除后全量重建，因此 data_sources 即最终生效范围，未包含的本地实名源关系会被删除
+        - 只处理 plugin_id=local 的 REAL 数据源关系，虚拟/内置管理关系不受影响
         """
         data_source_ids = [ds.id for ds in data_sources]
         if not data_source_ids:
             return
 
-        IdpDataSourceRelation.objects.filter(idp=idp).delete()
+        IdpDataSourceRelation.objects.filter(
+            idp=idp,
+            data_source__type=DataSourceTypeEnum.REAL,
+            data_source__plugin_id=DataSourcePluginEnum.LOCAL,
+        ).delete()
         IdpDataSourceRelation.objects.bulk_create(
             [
                 IdpDataSourceRelation(

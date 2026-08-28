@@ -17,6 +17,8 @@
 from typing import Any, Dict, List
 
 import pytest
+from bkuser.apps.data_source.constants import DataSourceTypeEnum
+from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.idp.constants import IdpStatus
 from bkuser.apps.idp.data_models import DataSourceMatchRule
 from bkuser.apps.idp.models import Idp, IdpDataSourceRelation, IdpPlugin
@@ -24,6 +26,7 @@ from bkuser.biz.idp_data_source import IdpDataSourceRelationHandler
 from bkuser.common.constants import SENSITIVE_MASK
 from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
 from bkuser.idp_plugins.wecom.plugin import WecomIdpPluginConfig
+from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 from django.urls import reverse
 from rest_framework import status
 
@@ -407,3 +410,56 @@ class TestLocalIdpCreateApi:
         )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "认证源插件配置不合法" in resp.data["message"]
+
+
+class TestLocalIdpUpdateApi:
+    def test_shrink_scope_disable_removed_data_source_password(
+        self, api_client, random_tenant, bare_local_data_source, local_ds_plugin, local_ds_plugin_cfg
+    ):
+        """缩小生效范围后，被移出的数据源应同步关闭密码功能"""
+        other_data_source = DataSource.objects.create(
+            owner_tenant_id=random_tenant.id,
+            name="本地数据源 2",
+            type=DataSourceTypeEnum.REAL,
+            plugin=local_ds_plugin,
+            plugin_config=LocalDataSourcePluginConfig(**local_ds_plugin_cfg),
+        )
+
+        idp_name = generate_random_string()
+        resp = api_client.post(
+            reverse("idp.local.create"),
+            data={
+                "name": idp_name,
+                "status": IdpStatus.ENABLED,
+                "plugin_config": local_ds_plugin_cfg,
+                "data_source_ids": [bare_local_data_source.id, other_data_source.id],
+            },
+        )
+        assert resp.status_code == status.HTTP_201_CREATED
+        idp_id = resp.data["id"]
+
+        # 将生效范围缩小为仅剩首个数据源
+        resp = api_client.put(
+            reverse("idp.local.retrieve_update", kwargs={"id": idp_id}),
+            data={
+                "name": idp_name,
+                "status": IdpStatus.ENABLED,
+                "plugin_config": local_ds_plugin_cfg,
+                "data_source_ids": [bare_local_data_source.id],
+            },
+        )
+        assert resp.status_code == status.HTTP_204_NO_CONTENT
+
+        # 仍在生效范围内的数据源，密码功能保持启用
+        bare_local_data_source.refresh_from_db()
+        assert bare_local_data_source.plugin_config["enable_password"] is True
+
+        # 被移出生效范围的数据源，密码功能同步关闭
+        other_data_source.refresh_from_db()
+        assert other_data_source.plugin_config["enable_password"] is False
+
+        # 关系表 & 登录插件配置中也只剩保留的数据源
+        assert list(IdpDataSourceRelation.objects.filter(idp_id=idp_id).values_list("data_source_id", flat=True)) == [
+            bare_local_data_source.id
+        ]
+        assert Idp.objects.get(id=idp_id).plugin_config["data_source_ids"] == [bare_local_data_source.id]

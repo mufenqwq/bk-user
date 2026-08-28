@@ -32,6 +32,7 @@ from bkuser.apps.sync.constants import SyncTaskStatus
 from bkuser.apps.sync.models import DataSourceSyncTask
 from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.local.constants import PasswordGenerateMethod
+from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test.utils import override_settings
@@ -563,7 +564,10 @@ class TestDataSourceBatchDeleteApi:
 
         resp = api_client.delete(
             reverse("data_source.batch_delete"),
-            QUERY_STRING=urlencode({"is_delete_idp": False}, doseq=True),
+            QUERY_STRING=urlencode(
+                {"data_source_ids": [data_source.id, bare_general_data_source.id], "is_delete_idp": False},
+                doseq=True,
+            ),
         )
         assert resp.status_code == status.HTTP_204_NO_CONTENT
 
@@ -582,7 +586,10 @@ class TestDataSourceBatchDeleteApi:
     ):
         resp = api_client.delete(
             reverse("data_source.batch_delete"),
-            QUERY_STRING=urlencode({"is_delete_idp": True}, doseq=True),
+            QUERY_STRING=urlencode(
+                {"data_source_ids": [data_source.id, bare_general_data_source.id], "is_delete_idp": True},
+                doseq=True,
+            ),
         )
         assert resp.status_code == status.HTTP_204_NO_CONTENT
 
@@ -592,6 +599,28 @@ class TestDataSourceBatchDeleteApi:
         assert not Idp.objects.filter(id=local_idp.id).exists()
         assert not Idp.objects.filter(id=wecom_idp.id).exists()
         assert not IdpSensitiveInfo.objects.filter(idp_id=wecom_idp.id).exists()
+
+    def test_batch_delete_with_other_tenant_data_source(
+        self, api_client, data_source, bare_virtual_data_source, local_ds_plugin, local_ds_plugin_cfg
+    ):
+        """夹带其他租户的数据源 / 非实名数据源时，整个请求都应被拒绝"""
+        other_tenant_data_source = DataSource.objects.create(
+            owner_tenant_id=generate_random_string(),
+            name="其他租户数据源",
+            type=DataSourceTypeEnum.REAL,
+            plugin=local_ds_plugin,
+            plugin_config=LocalDataSourcePluginConfig(**local_ds_plugin_cfg),
+        )
+
+        for invalid_data_source in [other_tenant_data_source, bare_virtual_data_source]:
+            resp = api_client.delete(
+                reverse("data_source.batch_delete"),
+                QUERY_STRING=urlencode({"data_source_ids": [data_source.id, invalid_data_source.id]}, doseq=True),
+            )
+            assert resp.status_code == status.HTTP_400_BAD_REQUEST
+            # 校验不通过时，合法的数据源也不允许被删除
+            assert DataSource.objects.filter(id=data_source.id).exists()
+            assert DataSource.objects.filter(id=invalid_data_source.id).exists()
 
 
 class TestDataSourceRelatedResourceStatsApi:

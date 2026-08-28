@@ -252,7 +252,7 @@ class LocalIdpCreateInputSLZ(serializers.Serializer):
 
         # 检查是否已经存在对应的认证源
         if IdpDataSourceRelationHandler.has_duplicate_plugin_real_relation(
-            self.context["tenant_id"], idp_plugin_id=DataSourcePluginEnum.LOCAL
+            self.context["tenant_id"], idp_plugin_id=BuiltinIdpPluginEnum.LOCAL
         ):
             raise ValidationError(_("本地账密登录已存在"))
 
@@ -295,6 +295,6 @@ class LocalIdpUpdateInputSLZ(LocalIdpCreateInputSLZ):
         if (plugin_config.enable_password and status == IdpStatus.DISABLED) or (
             not plugin_config.enable_password and status == IdpStatus.ENABLED
         ):
-            raise ValidationError("本地登录启用状态必须与密码功能启用保持一致")
+            raise ValidationError(_("本地登录启用状态必须与密码功能启用保持一致"))
 
         return attrs

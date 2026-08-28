@@ -91,6 +91,7 @@ from bkuser.biz.auditor import (
 )
 from bkuser.biz.organization import DataSourceUserHandler, TenantOrgPathHandler
 from bkuser.biz.password_rule import PasswordRuleHandler
+from bkuser.biz.validators import validate_user_new_password
 from bkuser.common.constants import PERMANENT_TIME
 from bkuser.common.error_codes import error_codes
 from bkuser.common.views import ExcludePatchAPIViewMixin
@@ -1166,9 +1167,13 @@ class TenantUserPasswordBatchResetApi(
     )
     def put(self, request, *args, **kwargs):
         cur_tenant_id = self.get_current_tenant_id()
-        # Note: 密码策略是数据源级配置，SLZ 校验密码合规性以来 plugin_config,
-        #       因此 view 层先按 data_source_id 获取数据源，加载配置，再传给 SLZ 完成业务校验
-        data_source = self.get_local_real_data_source(request.data["data_source_id"])
+
+        slz = TenantUserPasswordBatchResetInputSLZ(data=request.data, context={"tenant_id": cur_tenant_id})
+        slz.is_valid(raise_exception=True)
+        data = slz.validated_data
+        raw_password = data["password"]
+
+        data_source = self.get_local_real_data_source(data["data_source_id"])
 
         # 数据源配置
         plugin_config = data_source.get_plugin_cfg()
@@ -1179,17 +1184,6 @@ class TenantUserPasswordBatchResetApi(
         if not plugin_config.enable_password:
             raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("当前数据源未启用密码功能"))
 
-        slz = TenantUserPasswordBatchResetInputSLZ(
-            data=request.data,
-            context={
-                "tenant_id": cur_tenant_id,
-                "plugin_config": plugin_config,
-            },
-        )
-        slz.is_valid(raise_exception=True)
-        data = slz.validated_data
-        raw_password = data["password"]
-
         data_source_users = [
             tenant_user.data_source_user
             for tenant_user in TenantUser.objects.filter(
@@ -1198,6 +1192,13 @@ class TenantUserPasswordBatchResetApi(
                 data_source=data_source,
             ).select_related("data_source_user")
         ]
+
+        for data_source_user in data_source_users:
+            validate_user_new_password(
+                password=raw_password,
+                data_source_user_id=data_source_user.id,
+                plugin_config=plugin_config,
+            )
 
         DataSourceUserHandler.batch_update_password(
             data_source_users=data_source_users,

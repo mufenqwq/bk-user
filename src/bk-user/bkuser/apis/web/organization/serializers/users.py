@@ -177,7 +177,7 @@ def _validate_duplicate_username_in_tenant(
     return username
 
 
-def _validate_leader_ids(leader_ids: List[str], tenant_id: str, data_source_id: str) -> List[str]:
+def _validate_leader_ids(leader_ids: List[str], tenant_id: str, data_source_id: int) -> List[str]:
     """校验直属上级是否存在于指定数据源中"""
     exists_tenant_users = TenantUser.objects.filter(
         id__in=leader_ids, tenant_id=tenant_id, data_source_id=data_source_id
@@ -187,6 +187,29 @@ def _validate_leader_ids(leader_ids: List[str], tenant_id: str, data_source_id: 
         raise ValidationError(_("指定的直属上级 {} 不存在").format(",".join(invalid_leader_ids)))
 
     return leader_ids
+
+
+def _validate_department_ids(department_ids: List[int], data_source_id: int) -> List[int]:
+    """校验部门是否存在于指定数据源中"""
+    exists_tenant_departments = TenantDepartment.objects.filter(
+        id__in=department_ids, data_source_id=data_source_id
+    ).values_list("id", flat=True)
+
+    if invalid_department_ids := set(department_ids) - set(exists_tenant_departments):
+        raise ValidationError(_("指定的部门 {} 不存在").format(invalid_department_ids))
+
+    return department_ids
+
+
+def _validate_phone(phone: str, phone_country_code: str) -> None:
+    """若提供了手机号，则校验其与国际区号是否匹配"""
+    if not phone:
+        return
+
+    try:
+        validate_phone_with_country_code(phone=phone, country_code=phone_country_code)
+    except ValueError as e:
+        raise ValidationError(str(e))
 
 
 class TenantUserCreateInputSLZ(serializers.Serializer):
@@ -219,12 +242,7 @@ class TenantUserCreateInputSLZ(serializers.Serializer):
     )
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
-        # 如果提供了手机号，则校验手机号是否合法
-        if attrs["phone"]:
-            try:
-                validate_phone_with_country_code(phone=attrs["phone"], country_code=attrs["phone_country_code"])
-            except ValueError as e:
-                raise ValidationError(str(e))
+        _validate_phone(attrs["phone"], attrs["phone_country_code"])
 
         tenant_id = self.context["tenant_id"]
         data_source_id = attrs["data_source_id"]
@@ -235,16 +253,8 @@ class TenantUserCreateInputSLZ(serializers.Serializer):
         validate_data_source_user_username(stored_username)
         _validate_duplicate_username_in_tenant(tenant_id, stored_username)
 
-        # 校验部门存在，且属于当前数据源
-        invalid_department_ids = set(attrs["department_ids"]) - set(
-            TenantDepartment.objects.filter(id__in=attrs["department_ids"], data_source_id=data_source_id).values_list(
-                "id", flat=True
-            )
-        )
-        if invalid_department_ids:
-            raise ValidationError(_("指定的部门 {} 不存在").format(invalid_department_ids))
-
-        # 校验直属上级存在，且属于当前数据源
+        # 校验部门 & 直属上级存在，且属于当前数据源
+        _validate_department_ids(attrs["department_ids"], data_source_id)
         _validate_leader_ids(attrs["leader_ids"], tenant_id, data_source_id)
 
         # 校验自定义字段
@@ -428,11 +438,7 @@ class TenantUserUpdateInputSLZ(serializers.Serializer):
         return expired_at
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
-        if attrs["phone"]:
-            try:
-                validate_phone_with_country_code(phone=attrs["phone"], country_code=attrs["phone_country_code"])
-            except ValueError as e:
-                raise ValidationError(str(e))
+        _validate_phone(attrs["phone"], attrs["phone_country_code"])
 
         tenant_id = self.context["tenant_id"]
         data_source_id = self.context["data_source"].id
@@ -443,13 +449,7 @@ class TenantUserUpdateInputSLZ(serializers.Serializer):
         _validate_duplicate_username_in_tenant(tenant_id, attrs["username"], data_source_user_id)
 
         # 部门：存在且属于该用户所在数据源
-        invalid_department_ids = set(attrs["department_ids"]) - set(
-            TenantDepartment.objects.filter(id__in=attrs["department_ids"], data_source_id=data_source_id).values_list(
-                "id", flat=True
-            )
-        )
-        if invalid_department_ids:
-            raise ValidationError(_("指定的部门 {} 不存在").format(invalid_department_ids))
+        _validate_department_ids(attrs["department_ids"], data_source_id)
 
         # 上级：不能是自己 + 存在且属于该数据源
         if self.context["tenant_user_id"] in attrs["leader_ids"]:
@@ -768,19 +768,6 @@ class TenantUserPasswordBatchResetInputSLZ(serializers.Serializer):
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
         # 校验是否每一位用户都存在于当前租户和数据源中
         _validate_tenant_user_ids(attrs["user_ids"], self.context["tenant_id"], [attrs["data_source_id"]])
-
-        exists_tenant_users = TenantUser.objects.filter(
-            id__in=attrs["user_ids"],
-            tenant_id=self.context["tenant_id"],
-            data_source_id=attrs["data_source_id"],
-        )
-        # 校验密码是否符合每一位用户的密码策略
-        for tenant_user in exists_tenant_users:
-            validate_user_new_password(
-                password=attrs["password"],
-                data_source_user_id=tenant_user.data_source_user_id,
-                plugin_config=self.context["plugin_config"],
-            )
         return attrs
 
 
