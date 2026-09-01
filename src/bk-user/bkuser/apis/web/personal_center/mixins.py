@@ -29,7 +29,7 @@ class CurrentTenantPhoneOrEmailUpdateRestrictionMixin:
         valid_restrictions = [item.value for item in PhoneOrEmailUpdateRestrictionEnum]
 
         if restriction is None or restriction not in valid_restrictions:
-            return PhoneOrEmailUpdateRestrictionEnum.NEED_VERIFY
+            return PhoneOrEmailUpdateRestrictionEnum.NOT_EDITABLE
 
         return restriction
 
@@ -39,6 +39,6 @@ class CurrentTenantPhoneOrEmailUpdateRestrictionMixin:
         valid_restrictions = [item.value for item in PhoneOrEmailUpdateRestrictionEnum]
 
         if restriction is None or restriction not in valid_restrictions:
-            return PhoneOrEmailUpdateRestrictionEnum.NEED_VERIFY
+            return PhoneOrEmailUpdateRestrictionEnum.NOT_EDITABLE
 
         return restriction

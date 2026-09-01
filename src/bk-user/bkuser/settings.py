@@ -836,11 +836,11 @@ RESET_PASSWORD_TOKEN_VALID_TIME = env.int("RESET_PASSWORD_TOKEN_VALID_TIME", 60 
 RESET_PASSWORD_TOKEN_LENGTH = env.int("RESET_PASSWORD_TOKEN_LENGTH", 128)
 # 重置密码 Token 每天最大发送次数
 RESET_PASSWORD_TOKEN_MAX_SEND_PER_DAY = env.int("RESET_PASSWORD_TOKEN_MAX_SEND_PER_DAY", 3)
-# 每个租户对个人中心手机号的更新限制 Note: 默认是 need_verify，无需配置。
+# 每个租户对个人中心手机号的更新限制 Note: 默认是 not_editable，无需配置。
 # 可配置的值有：(need_verify / editable_directly / not_editable)
 # 值格式："tenant_id1=not_editable,tenant_id2=editable_directly,..."
 TENANT_PHONE_UPDATE_RESTRICTIONS = env.dict("TENANT_PHONE_UPDATE_RESTRICTIONS", default={})
-# 每个租户对个人中心邮箱的更新限制 Note: 默认是 need_verify，无需配置。
+# 每个租户对个人中心邮箱的更新限制 Note: 默认是 not_editable，无需配置。
 # 可配置的值有：(need_verify / editable_directly / not_editable)
 # 值格式："tenant_id1=not_editable,tenant_id2=editable_directly,..."
 TENANT_EMAIL_UPDATE_RESTRICTIONS = env.dict("TENANT_EMAIL_UPDATE_RESTRICTIONS", default={})
