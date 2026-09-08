@@ -18,6 +18,9 @@ import { platformConfig, useUser } from '@/store';
 import Password from '@/views/reset-password/index.vue';
 import ResetPassword from '@/views/reset-password/newPassword.vue';
 
+// iframe 嵌入（subEnv）时隐藏顶部导航，仅渲染业务内容
+withDefaults(defineProps<{ hideHeader?: boolean }>(), { hideHeader: false });
+
 const router = useRouter();
 
 const showName = ref(null);
@@ -76,7 +79,9 @@ const localeData = {
 
 const locale = computed(() => localeData[currentLang.value]);
 
-const url = `${window.BK_SHARED_RES_URL}/bk_user/base.js`;  // url 远程配置文件地址
+const url = process.env.BK_DESIGN_PREVIEW === 'true'
+  ? ''
+  : `${window.BK_SHARED_RES_URL}/bk_user/base.js`;  // url 远程配置文件地址
 const defaults = {
   name: '用户管理',
   nameEn: 'User Management',
@@ -168,7 +173,10 @@ onBeforeMount(() => {
           'main-loading': isLoading
         }"
       >
-        <HeaderBox v-if="!isLoading" />
+        <HeaderBox v-if="!isLoading && !hideHeader" />
+        <div v-else-if="!isLoading" class="iframe-router-view">
+          <router-view />
+        </div>
       </bk-loading>
     </bk-config-provider>
   </div>

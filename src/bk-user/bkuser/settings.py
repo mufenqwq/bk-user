@@ -175,7 +175,12 @@ AUTH_USER_MODEL = "bkuser_auth.User"
 
 # Internationalization
 LANGUAGE_CODE = "zh-cn"
-LANGUAGES = (("zh-cn", "中文"), ("en-us", "English"))
+DEFAULT_LANGUAGES = (("zh-cn", "中文"), ("en-us", "English"))
+# 蓝鲸体系内置语言（使用蓝鲸规范语言码，如 en 而非 en-us）
+BK_LANGUAGES = (("zh-cn", "中文"), ("en", "英文"))
+# EXTRA_LANGUAGES=ja=日本語,ko=한국어
+EXTRA_LANGUAGES = tuple(env.dict("EXTRA_LANGUAGES", default={}).items())
+LANGUAGES = DEFAULT_LANGUAGES + EXTRA_LANGUAGES
 LANGUAGE_COOKIE_NAME = "blueking_language"
 LOCALE_PATHS = [BASE_DIR / "locale"]
 USE_I18N = True
@@ -300,8 +305,8 @@ ENABLE_SYNC_APIGW = env.bool("ENABLE_SYNC_APIGW", default=False)
 # 是否自动同步 Web 网关
 ENABLE_SYNC_WEB_APIGW = env.bool("ENABLE_SYNC_WEB_APIGW", default=False)
 
-# 版本日志
-VERSION_LOG_FILES_DIR = BASE_DIR / "version_log"
+# 版本日志目录
+VERSION_LOG_FILES_DIR = env.str("VERSION_LOG_FILES_DIR", default=str(BASE_DIR / "version_log"))
 # 前端 Console 展示构建的版本信息
 BK_BUILD_VERSION = env.str("BK_BUILD_VERSION", default="unset")
 # 文档链接
@@ -831,11 +836,11 @@ RESET_PASSWORD_TOKEN_VALID_TIME = env.int("RESET_PASSWORD_TOKEN_VALID_TIME", 60 
 RESET_PASSWORD_TOKEN_LENGTH = env.int("RESET_PASSWORD_TOKEN_LENGTH", 128)
 # 重置密码 Token 每天最大发送次数
 RESET_PASSWORD_TOKEN_MAX_SEND_PER_DAY = env.int("RESET_PASSWORD_TOKEN_MAX_SEND_PER_DAY", 3)
-# 每个租户对个人中心手机号的更新限制 Note: 默认是 need_verify，无需配置。
+# 每个租户对个人中心手机号的更新限制 Note: 默认是 not_editable，无需配置。
 # 可配置的值有：(need_verify / editable_directly / not_editable)
 # 值格式："tenant_id1=not_editable,tenant_id2=editable_directly,..."
 TENANT_PHONE_UPDATE_RESTRICTIONS = env.dict("TENANT_PHONE_UPDATE_RESTRICTIONS", default={})
-# 每个租户对个人中心邮箱的更新限制 Note: 默认是 need_verify，无需配置。
+# 每个租户对个人中心邮箱的更新限制 Note: 默认是 not_editable，无需配置。
 # 可配置的值有：(need_verify / editable_directly / not_editable)
 # 值格式："tenant_id1=not_editable,tenant_id2=editable_directly,..."
 TENANT_EMAIL_UPDATE_RESTRICTIONS = env.dict("TENANT_EMAIL_UPDATE_RESTRICTIONS", default={})

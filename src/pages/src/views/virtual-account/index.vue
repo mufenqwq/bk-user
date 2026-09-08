@@ -315,11 +315,11 @@ const pageCurrentChange = (current: number) => {
 
 <style lang="less" scoped>
 .has-alert {
-  height: calc(100vh - 92px) !important;
+  height: calc(100vh - var(--header-height) - var(--alert-height)) !important;
 }
 
 .virtual-account-wrapper {
-  height: calc(100vh - 52px);
+  height: calc(100vh - var(--header-height));
   padding: 24px 160px;
 
   header {

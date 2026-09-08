@@ -56,7 +56,7 @@ const handleBack = () => {
   z-index: 11;
   display: flex;
   width: 100%;
-  height: 52px;
+  height: var(--breadcrumbs-height);
   padding: 0 24px;
   background-color: #fff;
   box-shadow: 0 3px 4px 0 rgb(0 0 0 / 4%);

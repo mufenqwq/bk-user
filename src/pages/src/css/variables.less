@@ -1,0 +1,12 @@
+/* 布局高度体系变量，集中管理 */
+:root {
+  --header-height: 52px;      /* 顶部导航高度（iframe 嵌入时为 0） */
+  --alert-height: 40px;       /* 顶部消息通知条高度 */
+  --breadcrumbs-height: 52px; /* 面包屑高度 */
+  --tab-height: 36px;         /* 父级 bk-tab 头高度 */
+}
+
+/* iframe 嵌入（subEnv）时无 MainHeader 顶栏，业务组件统一通过该变量适配高度 */
+.iframe-router-view {
+  --header-height: 0px;
+}

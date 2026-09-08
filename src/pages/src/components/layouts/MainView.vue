@@ -57,13 +57,13 @@ const hiddenBoxShadow = computed(() => route.meta.hiddenBoxShadow);
   background-color: #f5f7fa;
 
   &.has-breadcrumbs {
-    height: calc(100vh - 92px);
+    height: calc(100vh - var(--header-height) - var(--breadcrumbs-height));
   }
 }
 
 .has-alert {
   &.has-breadcrumbs {
-    height: calc(100vh - 144px);
+    height: calc(100vh - var(--header-height) - var(--breadcrumbs-height) - var(--alert-height));
   }
 }
 
@@ -91,7 +91,7 @@ const hiddenBoxShadow = computed(() => route.meta.hiddenBoxShadow);
   }
 
   &__list {
-    height: calc(100vh - 108px);
+    height: calc(100vh - var(--header-height) - 56px);
     padding: 12px 0 4px;
 
     &.user-scroll-y {

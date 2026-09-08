@@ -592,13 +592,15 @@ const expandConfig = reactive({
 </script>
 
 <style lang="less" scoped>
+/* 高度预算：var(--header-total) 为顶部固定开销（面包屑 + 父级 tab 头，定义于父组件） */
 .has-alert {
-  height: calc(100vh - 180px) !important;
+  /* 存在消息通知时顶部多一条 alert */
+  height: calc(100vh - var(--header-total) - var(--alert-height)) !important;
 }
 
 .user-info-wrapper {
   width: 100%;
-  height: calc(100vh - 140px);
+  height: calc(100vh - var(--header-total));
   padding: 24px;
 
   header {

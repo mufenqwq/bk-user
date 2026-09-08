@@ -223,7 +223,7 @@ const selectList = (val) => {
 
 <style lang="less" scoped>
 .login-setting-content {
-  height: calc(100vh - 104px);
+  height: calc(100vh - var(--header-height) - var(--breadcrumbs-height));
   padding: 24px;
 
   .setting-item {

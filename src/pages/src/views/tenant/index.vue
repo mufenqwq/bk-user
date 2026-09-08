@@ -704,7 +704,8 @@ const confirmPassword = async () => {
   try {
     if (emailValue.value) handleBlur();
     if (smsValue.value && !adminPasswordData.value.phone) changeTelError(true);
-    await formRef.value.validate();
+    const valid = await formRef.value?.validate?.().catch(() => false);
+    if (!valid) return;
     if (emailValue.value && emailError.value) return;
     if (telError.value) return;
 
@@ -795,12 +796,12 @@ onBeforeUnmount(() => {
 
 <style lang="less" scoped>
 .has-alert {
-  height: calc(100vh - 92px) !important;
+  height: calc(100vh - var(--header-height) - var(--alert-height)) !important;
 }
 
 .group-details-wrapper {
   width: 100%;
-  height: calc(100vh - 52px);
+  height: calc(100vh - var(--header-height));
   padding: 24px 144px;
 
   .main-content {

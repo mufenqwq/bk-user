@@ -2,7 +2,7 @@
   <blank-page v-if="isShow"></blank-page>
   <bk-resize-layout
     v-else
-    class="h-[calc(100vh-52px)] user-aside"
+    class="h-[calc(100vh-var(--header-height))] user-aside"
     immediate
     :min="280"
     :max="400"
@@ -19,7 +19,7 @@
         v-show="!organizationStore.isSearchTree"
         :key="organizationStore.reloadIndex"
         placement="top"
-        style="height: calc(100vh - 106px)"
+        style="height: calc(100vh - var(--header-height) - 54px)"
         :border="false"
         immediate
         :initial-divide="isShowCollaboration ? '50%' : '100%'">
@@ -60,19 +60,38 @@ import TableList from './components/table-list.vue';
 
 import useOrganizationStore from '@/store/organization';
 
+defineOptions({
+  name: 'OrganizationIndex',
+});
+
 const organizationStore = useOrganizationStore();
-const isShow = ref(null);
+const isShow = ref(true);
 const isShowCollaboration = computed(() => window.ENABLE_COLLABORATION_TENANT !== 'False');
 
-/** 当前激活的组织信息（自动根据 deptId 判断是部门还是租户） */
+/** 当前激活的组织信息 */
 const activeOrgInfo = computed(() => {
-  const { deptId, deptName, tenantId, tenantName } = organizationStore.selectedOrg;
+  const {
+    dataSourceId,
+    deptId,
+    deptName,
+    nodeType,
+    tenantId,
+    tenantName,
+  } = organizationStore.selectedOrg;
 
-  if (deptId !== 0) {
+  if (nodeType === 'department' || deptId !== 0) {
     return {
       id: deptId,
       name: deptName,
       type: 'department' as const,
+    };
+  }
+
+  if (nodeType === 'source') {
+    return {
+      id: dataSourceId,
+      name: deptName,
+      type: 'source' as const,
     };
   }
 
@@ -92,23 +111,20 @@ const handleSearchSelect = () => {
 
 onMounted(async () => {
   await organizationStore.handleFetchCurrentTenant();
-  if (organizationStore.currentTenant?.data_sources?.length === 0) {
-    isShow.value = true;
-  } else {
-    isShow.value = false;
-  }
   // 首次载入页面，默认选中当前租户
   organizationStore.updateSelectedOrg({
     tenantId: organizationStore.currentTenant.id,
     tenantName: organizationStore.currentTenant.name,
     tenantLogo: organizationStore.currentTenant.logo,
+    nodeType: 'tenant',
   });
+  isShow.value = organizationStore.currentTenant?.data_sources?.length === 0;
 });
 </script>
 
 <style lang="postcss" scoped>
 .table-main {
-  height: calc(100vh - 170px);
+  height: calc(100vh - var(--header-height) - var(--breadcrumbs-height) - 66px);
 }
 
 :deep(.bk-node-row) {

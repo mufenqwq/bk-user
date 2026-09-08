@@ -4,8 +4,11 @@ import { createPinia } from 'pinia';
 import { createApp } from 'vue';
 import VueDOMPurifyHTML from 'vue-dompurify-html';
 
+import { subEnv } from '@blueking/sub-saas';
+
 import App from './app.vue';
 import vIsMultipleTenant from './directives/is-multiple-tanent';
+import IframeApp from './iframe-app.vue';
 import i18n from './language/index';
 import router from './router';
 
@@ -52,7 +55,8 @@ const leaveBefore = async () => {
 
 window.leaveBefore = leaveBefore;
 
-createApp(App)
+// 子系统被主系统 iframe 嵌入（/sub 路径）时，使用 IframeApp 入口，否则使用正常 App 入口
+createApp(subEnv ? IframeApp : App)
   .use(router)
   .use(createPinia())
   .use(bkui)
