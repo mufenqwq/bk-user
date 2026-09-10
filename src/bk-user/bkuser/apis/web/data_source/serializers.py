@@ -491,7 +491,7 @@ class DataSourcePluginSLZ(serializers.Serializer):
 class DataSourceSyncRecordListOutputSLZ(serializers.Serializer):
     id = serializers.IntegerField(help_text="同步记录 ID")
     data_source_id = serializers.IntegerField(help_text="数据源 ID")
-    data_source_name = serializers.CharField(help_text="数据源名称快照")
+    data_source_name = serializers.CharField(help_text="数据源名称", source="data_source.name")
     plugin = DataSourcePluginSLZ(help_text="数据源插件", source="data_source.plugin")
     status = serializers.SerializerMethodField(help_text="数据源同步状态")
     has_warning = serializers.BooleanField(help_text="是否有警告")
@@ -517,7 +517,7 @@ class DataSourceSyncRecordListOutputSLZ(serializers.Serializer):
 class DataSourceSyncRecordRetrieveOutputSLZ(serializers.Serializer):
     id = serializers.IntegerField(help_text="同步记录 ID")
     data_source_id = serializers.IntegerField(help_text="数据源 ID")
-    data_source_name = serializers.CharField(help_text="数据源名称快照")
+    data_source_name = serializers.CharField(help_text="数据源名称", source="data_source.name")
     status = serializers.SerializerMethodField(help_text="数据源同步状态")
     has_warning = serializers.BooleanField(help_text="是否有警告")
     start_at = serializers.DateTimeField(help_text="开始时间")
