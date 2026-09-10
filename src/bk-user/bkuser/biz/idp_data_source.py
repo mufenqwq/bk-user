@@ -263,18 +263,15 @@ class IdpDataSourceRelationHandler:
         IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
 
     @staticmethod
-    def classify_idps_for_deletion(
-        owner_tenant_id: str, deleting_ds_ids: Set[int], is_delete_idp: bool
-    ) -> IdpDeletionPlan:
+    def classify_idps_for_deletion(owner_tenant_id: str, deleting_ds_ids: Set[int]) -> IdpDeletionPlan:
         """根据 IDP 与待删除实名数据源的关联情况，决定各 IDP 的处置策略：
 
         - 删除后仍有其他实名数据源关联：本地 IDP 需同步插件配置，其他类型无需处理
-        - 删除后无其他实名数据源关联：用户选了连带删除 or 本地 IDP → 删除，否则 → 禁用
-        - 孤儿 IDP（无任何关系记录）：用户选了连带删除时一并清理
+        - 删除后无其他实名数据源关联：本地 IDP → 删除，否则 → 禁用
+        - 孤儿 IDP（无任何关系记录）：与本次删除操作无关，不在此处处理
         """
-        real_idp_ds_map, orphan_idp_ids, idp_map = IdpDataSourceRelationHandler._get_real_idps_with_orphan(
-            owner_tenant_id
-        )
+
+        real_idp_ds_map, idp_map = IdpDataSourceRelationHandler._get_real_idp_relation_map(owner_tenant_id)
 
         plan = IdpDeletionPlan()
         for idp_id, ds_ids in real_idp_ds_map.items():
@@ -289,38 +286,27 @@ class IdpDataSourceRelationHandler:
                 # 删除后仍然有其他实名数据源关联，本地 IDP 需同步插件配置
                 if idp.is_local:
                     plan.to_sync_local.append(idp)
-            # 删除后无其他实名数据源关联，用户选了连带删除 or 本地 IDP → 删除，否则 → 禁用
-            elif is_delete_idp or idp.is_local:
+            # 删除后无其他实名数据源关联，本地 IDP → 删除，否则 → 禁用
+            elif idp.is_local:
                 plan.to_delete.append(idp)
             else:
                 plan.to_disable.append(idp)
 
-        # 孤儿 IDP（无任何关系记录，通常是之前数据源重置后遗留的）：用户选了连带删除时一并清理
-        if is_delete_idp:
-            plan.to_delete.extend(idp_map[idp_id] for idp_id in orphan_idp_ids)
-
         return plan
 
     @staticmethod
-    def _get_real_idps_with_orphan(owner_tenant_id: str) -> Tuple[Dict[str, List[int]], Set[str], Dict[str, Idp]]:
-        """获取租户下与实名数据源相关的 IDP，包括有关联关系的和孤儿（无任何关系记录）的。
-
-        返回 (实名数据源关系映射，孤儿 IDP ID 集合，IDP 映射)
-        """
+    def _get_real_idp_relation_map(owner_tenant_id: str) -> Tuple[Dict[str, List[int]], Dict[str, Idp]]:
+        """获取当前租户下实名数据源的 IDP 关系映射及相关 IDP"""
         real_idp_ds_map: Dict[str, List[int]] = defaultdict(list)
-        all_related_idp_ids: Set[str] = set()
-
         relations = IdpDataSourceRelation.objects.filter(
             idp_owner_tenant_id=owner_tenant_id,
-        ).values("idp_id", "data_source_id", "data_source__type")
+            data_source__type=DataSourceTypeEnum.REAL,
+        ).values("idp_id", "data_source_id")
         for rel in relations:
-            all_related_idp_ids.add(rel["idp_id"])
-            if rel["data_source__type"] == DataSourceTypeEnum.REAL:
-                real_idp_ds_map[rel["idp_id"]].append(rel["data_source_id"])
+            real_idp_ds_map[rel["idp_id"]].append(rel["data_source_id"])
 
-        idp_map = {idp.id: idp for idp in Idp.objects.filter(owner_tenant_id=owner_tenant_id)}
-        orphan_idp_ids = set(idp_map.keys()) - all_related_idp_ids
-        return real_idp_ds_map, orphan_idp_ids, idp_map
+        idp_map = {idp.id: idp for idp in Idp.objects.filter(owner_tenant_id=owner_tenant_id, id__in=real_idp_ds_map)}
+        return real_idp_ds_map, idp_map
 
     @staticmethod
     @transaction.atomic()

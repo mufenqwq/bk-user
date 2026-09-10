@@ -29,10 +29,8 @@ from rest_framework.response import Response
 
 from bkuser.apis.web.data_source.mixins import CurrentUserTenantDataSourceMixin
 from bkuser.apis.web.data_source.serializers import (
-    DataSourceBatchDeleteInputSLZ,
     DataSourceCreateInputSLZ,
     DataSourceCreateOutputSLZ,
-    DataSourceDestroyInputSLZ,
     DataSourceImportOrSyncOutputSLZ,
     DataSourceListInputSLZ,
     DataSourceListOutputSLZ,
@@ -276,22 +274,17 @@ class DataSourceRetrieveUpdateDestroyApi(
 
     @swagger_auto_schema(
         tags=["data_source"],
-        operation_description="重置数据源",
-        query_serializer=DataSourceDestroyInputSLZ(),
+        operation_description="删除数据源",
         responses={status.HTTP_204_NO_CONTENT: ""},
     )
     def delete(self, request, *args, **kwargs):
         """删除数据源及关联的其他数据"""
         data_source = self.get_object()
         if not data_source.is_real_type:
-            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("仅可重置实体类型数据源"))
-
-        slz = DataSourceDestroyInputSLZ(data=request.query_params)
-        slz.is_valid(raise_exception=True)
-        is_delete_idp = slz.validated_data["is_delete_idp"]
+            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("仅可删除实体类型数据源"))
 
         idp_deletion_plan = IdpDataSourceRelationHandler.classify_idps_for_deletion(
-            data_source.owner_tenant_id, {data_source.id}, is_delete_idp
+            data_source.owner_tenant_id, {data_source.id}
         )
 
         # 【审计】创建数据源审计对象并记录变更前数据
@@ -327,66 +320,6 @@ class DataSourceRetrieveUpdateDestroyApi(
 
         # 【审计】将审计记录保存至数据库
         auditor.record_delete()
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-class DataSourceBatchDeleteApi(CurrentUserTenantMixin, generics.DestroyAPIView):
-    """批量删除当前租户下指定的实名数据源及关联资源"""
-
-    permission_classes = [IsAuthenticated, perm_class(PermAction.MANAGE_TENANT)]
-
-    @swagger_auto_schema(
-        tags=["data_source"],
-        operation_description="批量重置数据源",
-        query_serializer=DataSourceBatchDeleteInputSLZ(),
-        responses={status.HTTP_204_NO_CONTENT: ""},
-    )
-    def delete(self, request, *args, **kwargs):
-        tenant_id = self.get_current_tenant_id()
-
-        slz = DataSourceBatchDeleteInputSLZ(data=request.query_params, context={"tenant_id": tenant_id})
-        slz.is_valid(raise_exception=True)
-        is_delete_idp = slz.validated_data["is_delete_idp"]
-        deleting_ds_ids = set(slz.validated_data["data_source_ids"])
-
-        idp_deletion_plan = IdpDataSourceRelationHandler.classify_idps_for_deletion(
-            tenant_id, deleting_ds_ids, is_delete_idp
-        )
-
-        data_sources = list(
-            DataSource.objects.filter(id__in=deleting_ds_ids, owner_tenant_id=tenant_id, type=DataSourceTypeEnum.REAL)
-        )
-
-        # 【审计】创建数据源审计对象并记录变更前数据
-        auditor = DataSourceAuditor(request.user.username, tenant_id)
-        auditor.pre_record_batch_delete(data_sources, idp_deletion_plan.to_delete)
-
-        with transaction.atomic():
-            if idp_deletion_plan.to_delete:
-                IdpSensitiveInfo.objects.filter(idp__in=idp_deletion_plan.to_delete).delete()
-                Idp.objects.filter(id__in=[idp.id for idp in idp_deletion_plan.to_delete]).delete()
-
-            IdpDataSourceRelation.objects.filter(
-                idp_owner_tenant_id=tenant_id,
-                data_source_id__in=deleting_ds_ids,
-            ).delete()
-
-            if idp_deletion_plan.to_disable:
-                Idp.objects.filter(id__in=[idp.id for idp in idp_deletion_plan.to_disable]).update(
-                    status=IdpStatus.DISABLED,
-                    updated_at=timezone.now(),
-                    updater=request.user.username,
-                )
-
-            for idp in idp_deletion_plan.to_sync_local:
-                IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
-
-            for data_source in data_sources:
-                DataSourceHandler.delete_data_source_and_related_resources(data_source)
-
-        # 【审计】将审计记录保存至数据库
-        auditor.record_batch_delete()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
