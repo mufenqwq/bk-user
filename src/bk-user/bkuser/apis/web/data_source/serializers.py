@@ -318,25 +318,6 @@ class DataSourceUpdateInputSLZ(serializers.Serializer):
         return attrs
 
 
-class DataSourceBatchDeleteInputSLZ(serializers.Serializer):
-    data_source_ids = StringArrayField(help_text="数据源 ID 列表，逗号分隔", allow_blank=False)
-    is_delete_idp = serializers.BooleanField(help_text="重置数据源时是否同时删除 Idp 相关配置", default=False)
-
-    def validate_data_source_ids(self, data_source_ids: List[str]) -> List[str]:
-        tenant_id = self.context["tenant_id"]
-
-        exists_data_source_ids = DataSource.objects.filter(
-            id__in=data_source_ids, owner_tenant_id=tenant_id, type=DataSourceTypeEnum.REAL
-        ).values_list("id", flat=True)
-
-        if invalid_data_source_ids := set(data_source_ids) - set(exists_data_source_ids):
-            raise ValidationError(
-                _("当前租户 {} 下不存在 ID 为 {} 的实名数据源").format(tenant_id, invalid_data_source_ids)
-            )
-
-        return data_source_ids
-
-
 class DataSourceRelatedResourceStatsOutputSLZ(serializers.Serializer):
     own_department_count = serializers.IntegerField(help_text="本租户自有的部门数量")
     own_user_count = serializers.IntegerField(help_text="本租户自有的用户数量")
@@ -535,10 +516,6 @@ class DataSourceSyncRecordRetrieveOutputSLZ(serializers.Serializer):
         task = self.context["tenant_sync_task"]
         duration = task.duration + task.start_at - obj.start_at if task else obj.duration
         return duration_string(duration)
-
-
-class DataSourceDestroyInputSLZ(serializers.Serializer):
-    is_delete_idp = serializers.BooleanField(help_text="重置数据源时是否同时删除 Idp 相关配置", default=False)
 
 
 class DataSourcePluginConfigMetaRetrieveOutputSLZ(serializers.Serializer):

@@ -57,11 +57,6 @@ class DataSourceAuditor:
         self.data_befores["data_source"] = get_model_dict(data_source)
         self.data_befores["idps"] = [get_model_dict(idp) for idp in (waiting_delete_idps or [])]
 
-    def pre_record_batch_delete(self, data_sources: List[DataSource], waiting_delete_idps: List[Idp] | None = None):
-        """记录批量删除数据源前的相关数据记录"""
-        self.data_befores["data_sources"] = [get_model_dict(ds) for ds in data_sources]
-        self.data_befores["idps"] = [get_model_dict(idp) for idp in (waiting_delete_idps or [])]
-
     def record_create(self, data_source: DataSource):
         """记录数据源创建操作"""
         add_audit_record(
@@ -120,29 +115,6 @@ class DataSourceAuditor:
             object_id=data_source.id,
             extras={"overwrite": options.overwrite, "incremental": options.incremental, "trigger": options.trigger},
         )
-
-    def record_batch_delete(self):
-        """记录批量删除数据源操作"""
-        objects = [
-            AuditObject(
-                id=ds["id"],
-                type=ObjectTypeEnum.DATA_SOURCE,
-                operation=OperationEnum.DELETE_DATA_SOURCE,
-                data_before=ds,
-            )
-            for ds in self.data_befores["data_sources"]
-        ]
-        objects.extend(
-            AuditObject(
-                id=idp["id"],
-                type=ObjectTypeEnum.IDP,
-                operation=OperationEnum.DELETE_IDP,
-                data_before=idp,
-            )
-            for idp in self.data_befores["idps"]
-        )
-
-        batch_add_audit_records(self.operator, self.tenant_id, objects)
 
 
 class TenantUserUpdateAuditor:

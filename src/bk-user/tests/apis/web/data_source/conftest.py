@@ -20,9 +20,8 @@ from typing import Any, Dict, List
 
 import pytest
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
-from bkuser.apps.data_source.models import DataSource, DataSourcePlugin
+from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.idp.constants import IdpStatus
-from bkuser.apps.idp.data_models import gen_data_source_match_rule_of_local
 from bkuser.apps.idp.models import Idp, IdpDataSourceRelation
 from bkuser.apps.sync.constants import SyncTaskStatus, SyncTaskTrigger
 from bkuser.apps.sync.models import DataSourceSyncTask
@@ -31,7 +30,6 @@ from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
 from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
 from bkuser.idp_plugins.wecom.plugin import WecomIdpPluginConfig
 from bkuser.plugins.constants import DataSourcePluginEnum
-from bkuser.plugins.general.models import GeneralDataSourcePluginConfig
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
 from tests.test_utils.helpers import generate_random_string
@@ -144,37 +142,3 @@ def data_source_sync_tasks(data_source) -> List[DataSourceSyncTask]:
         extras={"async_run": True, "overwrite": True},
     )
     return [success_task, failed_task, other_tenant_task]
-
-
-@pytest.fixture
-def general_data_source(random_tenant, general_ds_plugin_cfg) -> DataSource:
-    """General HTTP data source in the same tenant for batch-delete tests"""
-    plugin = DataSourcePlugin.objects.get(id=DataSourcePluginEnum.GENERAL)
-    return DataSource.objects.create(
-        owner_tenant_id=random_tenant.id,
-        name="通用 HTTP 数据源",
-        type=DataSourceTypeEnum.REAL,
-        plugin=plugin,
-        plugin_config=GeneralDataSourcePluginConfig(**general_ds_plugin_cfg),
-        sync_config={"sync_period": 60},
-    )
-
-
-@pytest.fixture
-def general_idp(general_data_source) -> Idp:
-    idp = Idp.objects.create(
-        name="general_local",
-        owner_tenant_id=general_data_source.owner_tenant_id,
-        plugin_id=BuiltinIdpPluginEnum.LOCAL,
-        plugin_config=LocalIdpPluginConfig(data_source_ids=[general_data_source.id]),
-    )
-    IdpDataSourceRelation.objects.create(
-        idp=idp,
-        data_source=general_data_source,
-        idp_owner_tenant_id=idp.owner_tenant_id,
-        field_compare_rules=[
-            rule.model_dump()
-            for rule in gen_data_source_match_rule_of_local(general_data_source.id).field_compare_rules
-        ],
-    )
-    return idp
