@@ -18,10 +18,15 @@
 from typing import List
 
 import pytest
-from bkuser.apps.data_source.models import DataSourceDepartment
+from bkuser.apps.data_source.models import DataSourceDepartment, DataSourceUser
+from bkuser.apps.tenant.models import TenantDepartment
 from bkuser.biz.organization import TenantOrgPathHandler
 
 pytestmark = pytest.mark.django_db
+
+
+def _tenant_dept_id(tenant, code: str) -> int:
+    return TenantDepartment.objects.get(tenant=tenant, data_source_department__code=code).id
 
 
 @pytest.mark.usefixtures("_init_tenant_users_depts")
@@ -67,3 +72,57 @@ class TestQueryOrganizationPath:
         data_source_department_ids: List[int] = []
         result = TenantOrgPathHandler._query_org_path(data_source_department_ids, include_self=True)
         assert result == {}
+
+
+@pytest.mark.usefixtures("_init_tenant_users_depts")
+class TestGetUserOrganizationIdPathsMap:
+    """用户组织 ID 路径查询测试"""
+
+    def test_single_root_department(self, random_tenant):
+        """直属根部门时，路径只包含根部门自身"""
+        zhangsan = DataSourceUser.objects.get(username="zhangsan")
+
+        result = TenantOrgPathHandler.get_user_organization_id_paths_map(random_tenant.id, [zhangsan.id])
+
+        assert result[zhangsan.id] == [[_tenant_dept_id(random_tenant, "company")]]
+
+    def test_deep_department_path(self, random_tenant):
+        """路径从根组织到直属部门，包含直属部门"""
+        liuqi = DataSourceUser.objects.get(username="liuqi")
+
+        result = TenantOrgPathHandler.get_user_organization_id_paths_map(random_tenant.id, [liuqi.id])
+
+        assert result[liuqi.id] == [
+            [
+                _tenant_dept_id(random_tenant, "company"),
+                _tenant_dept_id(random_tenant, "dept_a"),
+                _tenant_dept_id(random_tenant, "center_aa"),
+                _tenant_dept_id(random_tenant, "group_aaa"),
+            ]
+        ]
+
+    def test_multi_departments(self, random_tenant):
+        """多组织人员返回全部组织路径"""
+        lisi = DataSourceUser.objects.get(username="lisi")
+
+        result = TenantOrgPathHandler.get_user_organization_id_paths_map(random_tenant.id, [lisi.id])
+
+        assert set(map(tuple, result[lisi.id])) == {
+            (_tenant_dept_id(random_tenant, "company"), _tenant_dept_id(random_tenant, "dept_a")),
+            (
+                _tenant_dept_id(random_tenant, "company"),
+                _tenant_dept_id(random_tenant, "dept_a"),
+                _tenant_dept_id(random_tenant, "center_aa"),
+            ),
+        }
+
+    def test_user_without_department(self, random_tenant):
+        """无组织人员返回空数组"""
+        freedom = DataSourceUser.objects.get(username="freedom")
+
+        result = TenantOrgPathHandler.get_user_organization_id_paths_map(random_tenant.id, [freedom.id])
+
+        assert result[freedom.id] == []
+
+    def test_empty_input(self, random_tenant):
+        assert TenantOrgPathHandler.get_user_organization_id_paths_map(random_tenant.id, []) == {}

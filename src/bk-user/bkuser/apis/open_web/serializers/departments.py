@@ -14,7 +14,7 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -94,9 +94,13 @@ class TenantDepartmentUserListOutputSLZ(serializers.Serializer):
     bk_username = serializers.CharField(help_text="蓝鲸用户唯一标识", source="id")
     login_name = serializers.CharField(help_text="企业内用户唯一标识", source="data_source_user.username")
     display_name = serializers.SerializerMethodField(help_text="用户展示名称")
+    organization_id_paths = serializers.SerializerMethodField(help_text="用户所属部门 ID 路径")
 
     def get_display_name(self, obj: TenantUser) -> str:
         return self.context["display_name_map"][obj.id]
+
+    def get_organization_id_paths(self, obj: TenantUser) -> List[List[int]]:
+        return self.context["org_id_path_map"].get(obj.data_source_user_id, [])
 
 
 class TenantDepartmentLookupInputSLZ(serializers.Serializer):

@@ -251,6 +251,29 @@ class TenantOrgPathHandler:
         }
 
     @staticmethod
+    def get_user_organization_id_paths_map(
+        tenant_id: str, data_source_user_ids: List[int]
+    ) -> Dict[int, List[List[int]]]:
+        """数据源用户 ID -> [[租户部门 ID, ...], ...], 每条从根到直属部门"""
+
+        # 数据源用户 ID -> [数据源部门 ID1， 数据源部门 ID2]
+        user_dept_id_map = defaultdict(list)
+        for relation in DataSourceDepartmentUserRelation.objects.filter(user_id__in=data_source_user_ids):
+            user_dept_id_map[relation.user_id].append(relation.department_id)
+
+        # 数据源部门 ID 集合
+        data_source_dept_ids: Set[int] = set().union(*user_dept_id_map.values())
+
+        # 数据源部门 ID -> 组织 ID 路径
+        org_id_path_map = TenantOrgPathHandler._query_org_id_path(tenant_id, list(data_source_dept_ids))
+
+        # 数据源用户 ID -> 组织 ID 路径列表
+        return {
+            user_id: [org_id_path_map[dept_id] for dept_id in user_dept_id_map[user_id] if dept_id in org_id_path_map]
+            for user_id in data_source_user_ids
+        }
+
+    @staticmethod
     def _query_org_path(data_source_department_ids: List[int], include_self: bool) -> Dict[int, str]:
         """构建数据源部门 ID -> 组织路径映射"""
         org_path_map = {}
@@ -270,6 +293,31 @@ class TenantOrgPathHandler:
             org_path_map[dept_id] = "/".join(dept_names)
 
         return org_path_map
+
+    @staticmethod
+    def _query_org_id_path(tenant_id: str, data_source_department_ids: List[int]) -> Dict[int, List[int]]:
+        """构建数据源部门 ID -> 租户部门 ID 路径映射（根 -> 自身）"""
+        ancestor_id_map = DepartmentAncestorCache().batch_get(data_source_department_ids)
+
+        all_ds_dept_ids = set(data_source_department_ids).union(*ancestor_id_map.values())
+        ds_to_tenant_dept_id = dict(
+            TenantDepartment.objects.filter(
+                tenant_id=tenant_id,
+                data_source_department_id__in=all_ds_dept_ids,
+            ).values_list("data_source_department_id", "id")
+        )
+
+        org_id_path_map: Dict[int, List[int]] = {}
+        for dept_id in data_source_department_ids:
+            path = [
+                ds_to_tenant_dept_id[ds_id]
+                for ds_id in ancestor_id_map.get(dept_id, []) + [dept_id]
+                if ds_id in ds_to_tenant_dept_id
+            ]
+            if path:
+                org_id_path_map[dept_id] = path
+
+        return org_id_path_map
 
     @staticmethod
     def get_dept_descendant_org_path_map(department_id: int) -> Dict[int, str]:
