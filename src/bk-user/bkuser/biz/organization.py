@@ -285,7 +285,7 @@ class TenantOrgPathHandler:
         for relation in DataSourceDepartmentUserRelation.objects.filter(user_id__in=data_source_user_ids):
             user_dept_id_map[relation.user_id].append(relation.department_id)
 
-        # 数据源部门 ID 集合
+        # 数据源部门 ID 列表
         data_source_dept_ids = list(set().union(*user_dept_id_map.values()))
 
         # 直属数据源部门 -> 当前租户部门
