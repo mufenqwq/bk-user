@@ -76,6 +76,7 @@ class TenantUserSearchOutputSLZ(serializers.Serializer):
     owner_tenant_id = serializers.SerializerMethodField(help_text="归属租户 ID")
     status = serializers.ChoiceField(help_text="用户状态", choices=TenantUserStatus.get_choices())
     organization_paths = serializers.SerializerMethodField(help_text="用户所属部门路径")
+    organization_id_paths = serializers.SerializerMethodField(help_text="用户所属部门 ID 路径")
 
     def get_owner_tenant_id(self, obj: TenantUser) -> str:
         return DataSourceCache.get_owner_tenant_id(obj.data_source_id)
@@ -88,6 +89,9 @@ class TenantUserSearchOutputSLZ(serializers.Serializer):
 
     def get_organization_paths(self, obj: TenantUser) -> List[str]:
         return self.context["org_path_map"].get(obj.data_source_user_id, [])
+
+    def get_organization_id_paths(self, obj: TenantUser) -> List[List[int]]:
+        return self.context["org_id_path_map"].get(obj.data_source_user_id, [])
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -136,6 +140,7 @@ class TenantUserLookupOutputSLZ(serializers.Serializer):
     owner_tenant_id = serializers.SerializerMethodField(help_text="归属租户 ID")
     status = serializers.ChoiceField(help_text="用户状态", choices=TenantUserStatus.get_choices())
     organization_paths = serializers.SerializerMethodField(help_text="用户所属部门路径")
+    organization_id_paths = serializers.SerializerMethodField(help_text="用户所属部门 ID 路径")
 
     def get_data_source_type(self, obj: TenantUser) -> str:
         return DataSourceCache.get_type(obj.data_source_id)
@@ -151,6 +156,9 @@ class TenantUserLookupOutputSLZ(serializers.Serializer):
 
     def get_organization_paths(self, obj: TenantUser) -> List[str]:
         return self.context["org_path_map"].get(obj.data_source_user_id, [])
+
+    def get_organization_id_paths(self, obj: TenantUser) -> List[List[int]]:
+        return self.context["org_id_path_map"].get(obj.data_source_user_id, [])
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

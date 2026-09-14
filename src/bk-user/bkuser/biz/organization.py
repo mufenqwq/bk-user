@@ -275,6 +275,38 @@ class TenantOrgPathHandler:
         }
 
     @staticmethod
+    def get_user_organization_id_paths_map(
+        tenant_id: str, data_source_user_ids: List[int]
+    ) -> Dict[int, List[List[int]]]:
+        """数据源用户 ID -> [[租户部门 ID, ...], ...], 每条从根到直属部门"""
+
+        # 数据源用户 ID -> [数据源部门 ID1， 数据源部门 ID2]
+        user_dept_id_map = defaultdict(list)
+        for relation in DataSourceDepartmentUserRelation.objects.filter(user_id__in=data_source_user_ids):
+            user_dept_id_map[relation.user_id].append(relation.department_id)
+
+        # 数据源部门 ID 集合
+        data_source_dept_ids = list(set().union(*user_dept_id_map.values()))
+
+        # 直属数据源部门 -> 当前租户部门
+        ds_to_tenant = dict(
+            TenantDepartment.objects.filter(
+                tenant_id=tenant_id,
+                data_source_department_id__in=data_source_dept_ids,
+            ).values_list("data_source_department_id", "id")
+        )
+        ancestor_ids_map = TenantDepartmentHandler.get_ancestor_ids_map(tenant_id, data_source_dept_ids)
+
+        return {
+            user_id: [
+                ancestor_ids_map.get(ds_to_tenant[dept_id], []) + [ds_to_tenant[dept_id]]
+                for dept_id in user_dept_id_map[user_id]
+                if dept_id in ds_to_tenant
+            ]
+            for user_id in data_source_user_ids
+        }
+
+    @staticmethod
     def _query_org_path(data_source_department_ids: List[int], include_self: bool) -> Dict[int, str]:
         """构建数据源部门 ID -> 组织路径映射"""
         org_path_map = {}

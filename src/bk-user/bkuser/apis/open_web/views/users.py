@@ -175,17 +175,20 @@ class TenantUserSearchApi(OpenWebApiCommonMixin, generics.ListAPIView):
 
         queryset = TenantUser.objects.filter(*filter_args).select_related("data_source_user")[: self.search_limit]
 
+        data_source_user_ids = [tenant_user.data_source_user_id for tenant_user in queryset]
         with_organization_paths = data["with_organization_paths"]
         context: Dict[str, Any] = {
             "with_organization_paths": with_organization_paths,
             "org_path_map": {},
             "display_name_map": TenantUserDisplayNameHandler.batch_generate_tenant_user_display_name(queryset),
             "login_name_map": TenantUserHandler.batch_get_login_name(queryset),
+            "org_id_path_map": TenantOrgPathHandler.get_user_organization_id_paths_map(
+                self.tenant_id, data_source_user_ids
+            ),
         }
 
         # 若指定了 with_organization_paths，则返回用户的组织路径
         if with_organization_paths:
-            data_source_user_ids = [tenant_user.data_source_user_id for tenant_user in queryset]
             context["org_path_map"] = TenantOrgPathHandler.get_user_organization_paths_map(data_source_user_ids)
 
         return Response(TenantUserSearchOutputSLZ(queryset, context=context, many=True).data)
@@ -245,17 +248,20 @@ class TenantUserLookupApi(OpenWebApiCommonMixin, generics.ListAPIView):
 
         queryset = TenantUser.objects.filter(*filter_args).select_related("data_source_user")
 
+        data_source_user_ids = [tenant_user.data_source_user_id for tenant_user in queryset]
         with_organization_paths = data["with_organization_paths"]
         context: Dict[str, Any] = {
             "with_organization_paths": with_organization_paths,
             "org_path_map": {},
+            "org_id_path_map": TenantOrgPathHandler.get_user_organization_id_paths_map(
+                self.tenant_id, data_source_user_ids
+            ),
             "display_name_map": TenantUserDisplayNameHandler.batch_generate_tenant_user_display_name(queryset),
             "login_name_map": TenantUserHandler.batch_get_login_name(queryset),
         }
 
         # 若指定了 with_organization_paths，则返回用户的组织路径
         if with_organization_paths:
-            data_source_user_ids = [tenant_user.data_source_user_id for tenant_user in queryset]
             context["org_path_map"] = TenantOrgPathHandler.get_user_organization_paths_map(data_source_user_ids)
         return Response(TenantUserLookupOutputSLZ(queryset, context=context, many=True).data)
 
