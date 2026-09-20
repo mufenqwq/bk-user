@@ -238,7 +238,7 @@ class IdpDataSourceRelationHandler:
         IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
 
     @staticmethod
-    def classify_idps_for_deletion(owner_tenant_id: str, deleting_ds_id: int) -> IdpDeletionPlan:
+    def classify_idps_for_deletion(data_source: DataSource) -> IdpDeletionPlan:
         """根据 IDP 与待删除实名数据源的关联情况，决定各 IDP 的处置策略：
 
         - 删除后仍有其他实名数据源关联：本地 IDP 需同步插件配置，其他类型无需处理
@@ -246,12 +246,12 @@ class IdpDataSourceRelationHandler:
         - 孤儿 IDP（无任何关系记录）：与本次删除操作无关，不在此处处理
         """
 
-        real_idp_ds_map, idp_map = IdpDataSourceRelationHandler._get_real_idp_relation_map(owner_tenant_id)
+        real_idp_ds_map, idp_map = IdpDataSourceRelationHandler._get_real_idp_relation_map(data_source.owner_tenant_id)
 
         plan = IdpDeletionPlan()
         for idp_id, ds_ids in real_idp_ds_map.items():
             # 与待删除数据源无关的 IDP，跳过
-            if deleting_ds_id not in ds_ids:
+            if data_source.id not in ds_ids:
                 continue
 
             idp = idp_map[idp_id]
