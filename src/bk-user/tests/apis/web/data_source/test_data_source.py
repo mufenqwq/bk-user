@@ -547,7 +547,7 @@ class TestIdpDataSourceRelationHandler:
         """生效范围内存在不属于当前租户或不兼容的数据源时，抛出业务错误码
 
         Note: 序列化器会先做一层校验，这里直接调用业务方法，保证底层不变量
-        与错误码不被绕过（曾出现过导入到模块导致 AttributeError 的问题）。
+        与错误码不被绕过
         """
         with pytest.raises(APIError) as exc_info:
             IdpDataSourceRelationHandler.set_real_relations_from_match_rules(
