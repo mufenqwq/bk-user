@@ -16,7 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Tuple
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -263,7 +263,7 @@ class IdpDataSourceRelationHandler:
         IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
 
     @staticmethod
-    def classify_idps_for_deletion(owner_tenant_id: str, deleting_ds_ids: Set[int]) -> IdpDeletionPlan:
+    def classify_idps_for_deletion(owner_tenant_id: str, deleting_ds_id: int) -> IdpDeletionPlan:
         """根据 IDP 与待删除实名数据源的关联情况，决定各 IDP 的处置策略：
 
         - 删除后仍有其他实名数据源关联：本地 IDP 需同步插件配置，其他类型无需处理
@@ -275,15 +275,13 @@ class IdpDataSourceRelationHandler:
 
         plan = IdpDeletionPlan()
         for idp_id, ds_ids in real_idp_ds_map.items():
-            ds_id_set = set(ds_ids)
             # 与待删除数据源无关的 IDP，跳过
-            if not ds_id_set & deleting_ds_ids:
+            if deleting_ds_id not in ds_ids:
                 continue
 
             idp = idp_map[idp_id]
-            remaining = ds_id_set - deleting_ds_ids
-            if remaining:
-                # 删除后仍然有其他实名数据源关联，本地 IDP 需同步插件配置
+            # 删除后仍然有其他实名数据源关联，本地 IDP 需同步插件配置
+            if len(ds_ids) > 1:
                 if idp.is_local:
                     plan.to_sync_local.append(idp)
             # 删除后无其他实名数据源关联，本地 IDP → 删除，否则 → 禁用
@@ -317,8 +315,6 @@ class IdpDataSourceRelationHandler:
         - 只处理 plugin_id=local 的 REAL 数据源关系，虚拟/内置管理关系不受影响
         """
         data_source_ids = [ds.id for ds in data_sources]
-        if not data_source_ids:
-            return
 
         IdpDataSourceRelation.objects.filter(
             idp=idp,

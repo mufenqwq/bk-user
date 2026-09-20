@@ -520,6 +520,21 @@ class TestDataSourceUpdateApi:
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
+class TestIdpDataSourceRelationHandler:
+    def test_set_local_real_relations_with_empty_scope_clears_relations(self, local_idp):
+        assert IdpDataSourceRelation.objects.filter(idp=local_idp).exists()
+
+        IdpDataSourceRelationHandler.set_local_real_relations(local_idp, [])
+
+        assert not IdpDataSourceRelation.objects.filter(
+            idp=local_idp,
+            data_source__type=DataSourceTypeEnum.REAL,
+            data_source__plugin_id=DataSourcePluginEnum.LOCAL,
+        ).exists()
+        local_idp.refresh_from_db()
+        assert local_idp.plugin_config["data_source_ids"] == []
+
+
 class TestDataSourceRetrieveApi:
     def test_retrieve(self, api_client, data_source):
         resp = api_client.get(reverse("data_source.retrieve_update_destroy", kwargs={"id": data_source.id}))

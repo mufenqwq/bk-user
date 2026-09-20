@@ -68,6 +68,17 @@ def _validate_duplicate_idp_name(name: str, tenant_id: str, idp_id: str = "") ->
     return name
 
 
+def _validate_data_source_match_rules(
+    data_source_match_rules: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """校验数据源匹配规则中的生效范围数据源 ID 不重复"""
+    data_source_ids = [rule["data_source_id"] for rule in data_source_match_rules]
+    if len(data_source_ids) != len(set(data_source_ids)):
+        raise ValidationError(_("数据源匹配规则不能重复"))
+
+    return data_source_match_rules
+
+
 SOURCE_FIELD_REGEX = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,30}[a-zA-Z0-9]$")
 
 
@@ -134,10 +145,7 @@ class IdpCreateInputSLZ(serializers.Serializer):
         return plugin_id
 
     def validate_data_source_match_rules(self, data_source_match_rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        data_source_ids = [rule["data_source_id"] for rule in data_source_match_rules]
-        if len(data_source_ids) != len(set(data_source_ids)):
-            raise ValidationError(_("数据源匹配规则不能重复"))
-        return data_source_match_rules
+        return _validate_data_source_match_rules(data_source_match_rules)
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
         plugin_id = attrs["plugin_id"]
@@ -196,10 +204,7 @@ class IdpUpdateInputSLZ(serializers.Serializer):
         return _validate_duplicate_idp_name(name, self.context["tenant_id"], self.context["idp_id"])
 
     def validate_data_source_match_rules(self, data_source_match_rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        data_source_ids = [rule["data_source_id"] for rule in data_source_match_rules]
-        if len(data_source_ids) != len(set(data_source_ids)):
-            raise ValidationError(_("数据源匹配规则不能重复"))
-        return data_source_match_rules
+        return _validate_data_source_match_rules(data_source_match_rules)
 
     def validate_plugin_config(self, plugin_config: Dict[str, Any]) -> BasePluginConfig:
         cfg_cls = get_plugin_cfg_cls(self.context["plugin_id"])

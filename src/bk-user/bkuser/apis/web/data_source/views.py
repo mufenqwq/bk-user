@@ -284,7 +284,7 @@ class DataSourceRetrieveUpdateDestroyApi(
             raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("仅可删除实体类型数据源"))
 
         idp_deletion_plan = IdpDataSourceRelationHandler.classify_idps_for_deletion(
-            data_source.owner_tenant_id, {data_source.id}
+            data_source.owner_tenant_id, data_source.id
         )
 
         # 【审计】创建数据源审计对象并记录变更前数据
