@@ -55,15 +55,6 @@ class IdpDataSourceRelationHandler:
         )
 
     @staticmethod
-    def _get_real_data_source_ids(owner_tenant_id: str, plugin_id: str | None = None) -> List[int]:
-        """获取指定租户下全部实名数据源 ID，可按插件类型进一步筛选"""
-        queryset = DataSource.objects.filter(owner_tenant_id=owner_tenant_id, type=DataSourceTypeEnum.REAL)
-        if plugin_id:
-            queryset = queryset.filter(plugin_id=plugin_id)
-
-        return list(queryset.order_by("id").values_list("id", flat=True))
-
-    @staticmethod
     def get_relation_data_source_ids(
         idp: Idp,
         data_source_type: str | None = None,
@@ -90,22 +81,6 @@ class IdpDataSourceRelationHandler:
 
         data_source_ids = set(data_sources.values_list("id", flat=True))
         return [data_source_id for data_source_id in relation_ids if data_source_id in data_source_ids]
-
-    @staticmethod
-    def get_related_real_data_sources(idp: Idp, data_source_plugin_id: str | None = None) -> List[DataSource]:
-        """获取 IDP 关联的全部实名数据源对象，按关系创建顺序排列"""
-        data_source_ids = IdpDataSourceRelationHandler.get_relation_data_source_ids(
-            idp,
-            data_source_type=DataSourceTypeEnum.REAL,
-            data_source_plugin_id=data_source_plugin_id,
-        )
-        if not data_source_ids:
-            return []
-
-        data_source_map = DataSource.objects.in_bulk(data_source_ids)
-        return [
-            data_source_map[data_source_id] for data_source_id in data_source_ids if data_source_id in data_source_map
-        ]
 
     @staticmethod
     def get_real_idp_ids(
