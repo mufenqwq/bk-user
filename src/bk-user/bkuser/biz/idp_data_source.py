@@ -20,7 +20,6 @@ from typing import Dict, List, Tuple
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
-from rest_framework.exceptions import ValidationError
 
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource
@@ -29,6 +28,7 @@ from bkuser.apps.idp.data_models import (
     gen_data_source_match_rule_of_local,
 )
 from bkuser.apps.idp.models import Idp, IdpDataSourceRelation
+from bkuser.common.error_codes import error_codes
 from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
 from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
 from bkuser.plugins.constants import DataSourcePluginEnum
@@ -201,7 +201,7 @@ class IdpDataSourceRelationHandler:
                 valid_qs = valid_qs.filter(plugin_id=DataSourcePluginEnum.LOCAL)
             valid_ids = set(valid_qs.values_list("id", flat=True))
             if target_ids - valid_ids:
-                raise ValidationError(_("存在不兼容或不属于当前租户的实名数据源"))
+                raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("存在不兼容或不属于当前租户的实名数据源"))
 
         # 现有 REAL 关系: {data_source_id: relation}（target 为空表示清空全部 REAL 关系）
         existing = {
@@ -289,6 +289,8 @@ class IdpDataSourceRelationHandler:
         - 先清除后全量重建，因此 data_sources 即最终生效范围，未包含的本地实名源关系会被删除
         - 只处理 plugin_id=local 的 REAL 数据源关系，虚拟/内置管理关系不受影响
         """
+        if not data_sources:
+            return
         data_source_ids = [ds.id for ds in data_sources]
 
         IdpDataSourceRelation.objects.filter(
