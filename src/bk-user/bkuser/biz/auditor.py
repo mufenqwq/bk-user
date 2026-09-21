@@ -50,11 +50,11 @@ class DataSourceAuditor:
     def __init__(self, operator: str, tenant_id: str):
         self.operator = operator
         self.tenant_id = tenant_id
-        self.data_befores: Dict[str, Any] = {}
+        self.data_before: Dict[str, Any] = {}
 
     def pre_record_data_before(self, data_source: DataSource):
         """记录变更前的相关数据记录"""
-        self.data_befores["data_source"] = get_model_dict(data_source)
+        self.data_before = get_model_dict(data_source)
 
     def record_create(self, data_source: DataSource):
         """记录数据源创建操作"""
@@ -75,7 +75,7 @@ class DataSourceAuditor:
             operation=OperationEnum.MODIFY_DATA_SOURCE,
             object_type=ObjectTypeEnum.DATA_SOURCE,
             object_id=data_source.id,
-            data_before=self.data_befores["data_source"],
+            data_before=self.data_before,
             data_after=get_model_dict(data_source),
         )
 
@@ -86,8 +86,8 @@ class DataSourceAuditor:
             tenant_id=self.tenant_id,
             operation=OperationEnum.DELETE_DATA_SOURCE,
             object_type=ObjectTypeEnum.DATA_SOURCE,
-            object_id=self.data_befores["data_source"]["id"],
-            data_before=self.data_befores["data_source"],
+            object_id=self.data_before["id"],
+            data_before=self.data_before,
         )
 
     def record_sync(self, data_source: DataSource, options: DataSourceSyncOptions):
