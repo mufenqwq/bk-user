@@ -477,22 +477,22 @@ class TestIdpUpdateApi:
         assert idp.name == new_name
         assert IdpDataSourceRelation.objects.filter(idp=idp).count() == relation_count
 
-    # def test_partial_update_with_duplicate_name(self, bk_user, api_client, wecom_idp):
-    #     new_name = generate_random_string()
-    #     Idp.objects.create(
-    #         name=new_name,
-    #         owner_tenant_id=wecom_idp.owner_tenant_id,
-    #         plugin=wecom_idp.plugin,
-    #         plugin_config=WecomIdpPluginConfig(**wecom_idp.plugin_config),
-    #         creator=bk_user.username,
-    #         updater=bk_user.username,
-    #     )
-    #     resp = api_client.patch(
-    #         reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
-    #         data={"name": new_name},
-    #     )
-    #     assert resp.status_code == status.HTTP_400_BAD_REQUEST
-    #     assert "同名认证源已存在" in resp.data["message"]
+    def test_partial_update_with_duplicate_name(self, bk_user, api_client, wecom_idp):
+        new_name = generate_random_string()
+        Idp.objects.create(
+            name=new_name,
+            owner_tenant_id=wecom_idp.owner_tenant_id,
+            plugin=wecom_idp.plugin,
+            plugin_config=WecomIdpPluginConfig(**wecom_idp.plugin_config),
+            creator=bk_user.username,
+            updater=bk_user.username,
+        )
+        resp = api_client.patch(
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
+            data={"name": new_name},
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "同名认证源已存在" in resp.data["message"]
 
 
 class TestIdpRetrieveApi:
