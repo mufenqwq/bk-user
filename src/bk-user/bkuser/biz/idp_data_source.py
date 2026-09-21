@@ -155,6 +155,13 @@ class IdpDataSourceRelationHandler:
         return bool(set(idp_ids) - related_idp_ids)
 
     @staticmethod
+    def has_local_idp_relation(data_source: DataSource) -> bool:
+        """检查数据源是否被本地认证源关联"""
+        return IdpDataSourceRelation.objects.filter(
+            data_source=data_source, idp__plugin_id=BuiltinIdpPluginEnum.LOCAL
+        ).exists()
+
+    @staticmethod
     def _sync_local_plugin_config(idp: Idp) -> None:
         """将 IDP 当前关联的数据源 ID 同步到本地登录插件配置中。
 
@@ -175,7 +182,7 @@ class IdpDataSourceRelationHandler:
 
         - 只处理 REAL 数据源关系，虚拟/内置管理关系不受影响
         - match_rules 为空表示清空生效范围（idp 变孤儿）
-        - 联邦源兼容全部 REAL 源，本地账密只兼容 plugin_id=local
+        - 联邦源兼容全部 REAL 源，本地账密只兼容 plugin_id=local 且已启用密码功能的源
         """
         # 构建目标映射：data_source_id -> field_compare_rules
         target = {rule.data_source_id: [r.model_dump() for r in rule.field_compare_rules] for rule in match_rules}
@@ -188,9 +195,16 @@ class IdpDataSourceRelationHandler:
             )
             if idp.plugin_id == BuiltinIdpPluginEnum.LOCAL:
                 valid_qs = valid_qs.filter(plugin_id=DataSourcePluginEnum.LOCAL)
-            valid_ids = set(valid_qs.values_list("id", flat=True))
+            valid_data_sources = list(valid_qs)
+            valid_ids = {data_source.id for data_source in valid_data_sources}
             if target_ids - valid_ids:
                 raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("存在不兼容或不属于当前租户的实名数据源"))
+
+            # 本地认证源依赖数据源的密码功能，未启用密码的数据源不允许关联
+            if idp.plugin_id == BuiltinIdpPluginEnum.LOCAL and any(
+                not data_source.get_plugin_cfg().enable_password for data_source in valid_data_sources
+            ):
+                raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("本地认证源仅允许关联已启用密码功能的数据源"))
 
         # 现有 REAL 关系: {data_source_id: relation}（target 为空表示清空全部 REAL 关系）
         existing = {

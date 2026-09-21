@@ -436,6 +436,20 @@ class TestDataSourceUpdateApi:
         resp = api_client.get(url)
         assert resp.data["plugin_config"]["enable_password"] is False
 
+    def test_update_rejects_disable_password_with_local_idp(
+        self, api_client, data_source, local_idp, local_ds_plugin_cfg
+    ):
+        local_ds_plugin_cfg["enable_password"] = False
+        resp = api_client.put(
+            reverse("data_source.retrieve_update_destroy", kwargs={"id": data_source.id}),
+            data={"name": data_source.name, "plugin_config": local_ds_plugin_cfg},
+        )
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "该数据源已关联本地认证源，不允许关闭密码功能" in resp.data["message"]
+        data_source.refresh_from_db()
+        assert data_source.get_plugin_cfg().enable_password is True
+
     def test_update_with_invalid_plugin_config(self, api_client, data_source, local_ds_plugin_cfg):
         local_ds_plugin_cfg.pop("enable_password")
         resp = api_client.put(

@@ -75,6 +75,7 @@ from bkuser.common.response import convert_workbook_to_response
 from bkuser.common.views import ExcludePatchAPIViewMixin
 from bkuser.plugins.base import get_default_plugin_cfg, get_plugin_cfg_schema_map, get_plugin_cls
 from bkuser.plugins.constants import DataSourcePluginEnum
+from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
 from .schema import get_data_source_plugin_cfg_json_schema
 
@@ -250,6 +251,15 @@ class DataSourceRetrieveUpdateDestroyApi(
         )
         slz.is_valid(raise_exception=True)
         data = slz.validated_data
+
+        # 本地认证源依赖数据源的密码功能，仍被关联时不允许关闭
+        plugin_config = data["plugin_config"]
+        if (
+            isinstance(plugin_config, LocalDataSourcePluginConfig)
+            and not plugin_config.enable_password
+            and IdpDataSourceRelationHandler.has_local_idp_relation(data_source)
+        ):
+            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("该数据源已关联本地认证源，不允许关闭密码功能"))
 
         # 【审计】创建数据源审计对象并记录变更前数据
         auditor = DataSourceAuditor(request.user.username, data_source.owner_tenant_id)

@@ -151,7 +151,12 @@ class IdpRetrieveUpdateDestroyApi(CurrentUserTenantMixin, generics.RetrieveUpdat
     lookup_url_kwarg = "id"
 
     def get_queryset(self):
-        return Idp.objects.filter(owner_tenant_id=self.get_current_tenant_id())
+        # Note: 仅可管理实名认证源 & 孤儿认证源
+        current_tenant_id = self.get_current_tenant_id()
+        return Idp.objects.filter(
+            owner_tenant_id=current_tenant_id,
+            id__in=IdpDataSourceRelationHandler.get_real_idp_ids_with_orphan(current_tenant_id),
+        )
 
     @swagger_auto_schema(
         tags=["idp"],

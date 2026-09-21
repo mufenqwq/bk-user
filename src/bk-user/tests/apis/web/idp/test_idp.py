@@ -69,6 +69,26 @@ def local_data_source_match_rules(bare_local_data_source) -> List[Dict[str, Any]
     ]
 
 
+@pytest.fixture
+def builtin_management_idp(bare_local_data_source) -> Idp:
+    """内置管理认证源，关联内置管理数据源"""
+    builtin_data_source = DataSource.objects.create(
+        name="内置管理数据源",
+        owner_tenant_id=bare_local_data_source.owner_tenant_id,
+        type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
+        plugin=bare_local_data_source.plugin,
+        plugin_config=bare_local_data_source.get_plugin_cfg(),
+    )
+    idp = Idp.objects.create(
+        name="内置管理认证源",
+        owner_tenant_id=bare_local_data_source.owner_tenant_id,
+        plugin_id=BuiltinIdpPluginEnum.LOCAL,
+        plugin_config=LocalIdpPluginConfig(data_source_ids=[builtin_data_source.id]),
+    )
+    IdpDataSourceRelationHandler.set_builtin_management_relation(idp, builtin_data_source)
+    return idp
+
+
 def get_idp_match_rules(idp: Idp) -> List[Dict[str, Any]]:
     relation = IdpDataSourceRelation.objects.filter(idp=idp).first()
     if relation is None:
@@ -514,27 +534,52 @@ class TestIdpDestroyApi:
         assert not Idp.objects.filter(id=wecom_idp.id).exists()
         assert not IdpSensitiveInfo.objects.filter(idp_id=wecom_idp.id).exists()
 
-    def test_destroy_rejects_builtin_management_idp(self, api_client, bare_local_data_source):
-        builtin_data_source = DataSource.objects.create(
-            name="内置管理数据源",
-            owner_tenant_id=bare_local_data_source.owner_tenant_id,
-            type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
-            plugin=bare_local_data_source.plugin,
-            plugin_config=bare_local_data_source.get_plugin_cfg(),
-        )
-        builtin_idp = Idp.objects.create(
-            name="内置管理认证源",
-            owner_tenant_id=bare_local_data_source.owner_tenant_id,
-            plugin_id=BuiltinIdpPluginEnum.LOCAL,
-            plugin_config=LocalIdpPluginConfig(data_source_ids=[builtin_data_source.id]),
-        )
-        IdpDataSourceRelationHandler.set_builtin_management_relation(builtin_idp, builtin_data_source)
+    def test_destroy_rejects_builtin_management_idp(self, api_client, builtin_management_idp):
+        resp = api_client.delete(reverse("idp.retrieve_update_destroy", kwargs={"id": builtin_management_idp.id}))
 
-        resp = api_client.delete(reverse("idp.retrieve_update_destroy", kwargs={"id": builtin_idp.id}))
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
+        assert Idp.objects.filter(id=builtin_management_idp.id).exists()
 
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "该认证源已关联数据源，不允许删除" in resp.data["message"]
-        assert Idp.objects.filter(id=builtin_idp.id).exists()
+
+class TestBuiltinManagementIdpNotManageable:
+    """内置管理认证源不在通用认证源管理接口的可操作范围内"""
+
+    def test_absent_in_list(self, api_client, builtin_management_idp):
+        resp = api_client.get(reverse("idp.list_create"))
+
+        assert builtin_management_idp.id not in [idp["id"] for idp in resp.data]
+
+    def test_retrieve_not_found(self, api_client, builtin_management_idp):
+        resp = api_client.get(reverse("idp.retrieve_update_destroy", kwargs={"id": builtin_management_idp.id}))
+
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_not_found(self, api_client, builtin_management_idp, bare_local_data_source):
+        resp = api_client.put(
+            reverse("idp.retrieve_update_destroy", kwargs={"id": builtin_management_idp.id}),
+            data={
+                "name": generate_random_string(),
+                "status": IdpStatus.ENABLED,
+                "plugin_config": {},
+                "data_source_match_rules": [
+                    {
+                        "data_source_id": bare_local_data_source.id,
+                        "field_compare_rules": [{"source_field": "id", "target_field": "id"}],
+                    }
+                ],
+            },
+        )
+
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
+        # 未被改造成混合关系
+        assert not IdpDataSourceRelation.objects.filter(
+            idp=builtin_management_idp, data_source__type=DataSourceTypeEnum.REAL
+        ).exists()
+
+    def test_update_status_not_found(self, api_client, builtin_management_idp):
+        resp = api_client.put(reverse("idp.update_status", kwargs={"id": builtin_management_idp.id}))
+
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestIdpStatusUpdateApi:
@@ -576,6 +621,18 @@ class TestLocalIdpApi:
         resp = api_client.post(reverse("idp.list_create"), data=payload)
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert f"{BuiltinIdpPluginEnum.LOCAL} 类型的认证源已存在" in resp.data["message"]
+
+    def test_create_rejects_password_disabled_data_source(
+        self, api_client, random_tenant, bare_local_data_source, local_ds_plugin_cfg
+    ):
+        local_ds_plugin_cfg["enable_password"] = False
+        bare_local_data_source.set_plugin_cfg(LocalDataSourcePluginConfig(**local_ds_plugin_cfg))
+
+        resp = api_client.post(reverse("idp.list_create"), data=self._build_payload([bare_local_data_source]))
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "本地认证源仅允许关联已启用密码功能的数据源" in resp.data["message"]
+        assert not IdpDataSourceRelation.objects.filter(data_source=bare_local_data_source).exists()
 
     def test_create_rejects_request_plugin_config(self, api_client, random_tenant, bare_local_data_source):
         payload = self._build_payload([bare_local_data_source], plugin_config={"data_source_ids": [99999999]})

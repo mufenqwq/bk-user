@@ -77,18 +77,27 @@ def _validate_duplicate_data_source_match_rules(data_source_match_rules: List[Di
 
 
 def _validate_local_data_source_match_rules(tenant_id: str, data_source_match_rules: List[Dict[str, Any]]) -> None:
-    """本地账密认证源的生效范围只允许选择本地实名数据源"""
+    """本地账密认证源的生效范围只允许选择已启用密码功能的本地实名数据源"""
     data_source_ids = {rule["data_source_id"] for rule in data_source_match_rules}
-    local_data_source_ids = set(
+
+    local_data_sources = list(
         DataSource.objects.filter(
             id__in=data_source_ids,
             owner_tenant_id=tenant_id,
             type=DataSourceTypeEnum.REAL,
             plugin_id=DataSourcePluginEnum.LOCAL,
-        ).values_list("id", flat=True)
+        )
     )
-    if invalid_ids := data_source_ids - local_data_source_ids:
+    if invalid_ids := data_source_ids - {data_source.id for data_source in local_data_sources}:
         raise ValidationError(_("本地认证源的生效范围仅允许选择本地实名数据源，不合法数据源：{}").format(invalid_ids))
+
+    # 本地认证源依赖数据源的密码功能，未启用密码的数据源无法用于账密登录
+    if password_disabled_ids := {
+        data_source.id for data_source in local_data_sources if not data_source.get_plugin_cfg().enable_password
+    }:
+        raise ValidationError(
+            _("本地认证源仅允许关联已启用密码功能的数据源，未启用数据源：{}").format(password_disabled_ids)
+        )
 
 
 SOURCE_FIELD_REGEX = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,30}[a-zA-Z0-9]$")
