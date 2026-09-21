@@ -76,9 +76,7 @@ def _validate_duplicate_data_source_match_rules(data_source_match_rules: List[Di
         raise ValidationError(_("数据源匹配规则不能重复"))
 
 
-def _validate_local_data_source_match_rules(
-    tenant_id: str, data_source_match_rules: List[Dict[str, Any]]
-) -> List[Dict[str, Any]]:
+def _validate_local_data_source_match_rules(tenant_id: str, data_source_match_rules: List[Dict[str, Any]]) -> None:
     """本地账密认证源的生效范围只允许选择本地实名数据源"""
     data_source_ids = {rule["data_source_id"] for rule in data_source_match_rules}
     local_data_source_ids = set(
@@ -91,8 +89,6 @@ def _validate_local_data_source_match_rules(
     )
     if invalid_ids := data_source_ids - local_data_source_ids:
         raise ValidationError(_("本地认证源的生效范围仅允许选择本地实名数据源，不合法数据源：{}").format(invalid_ids))
-
-    return data_source_match_rules
 
 
 SOURCE_FIELD_REGEX = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,30}[a-zA-Z0-9]$")
