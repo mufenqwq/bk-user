@@ -170,25 +170,6 @@ class IdpDataSourceRelationHandler:
 
     @staticmethod
     @transaction.atomic()
-    def remove_data_source_relations(data_source: DataSource) -> None:
-        """删除指定数据源的全部认证源关系，并同步受影响的本地登录插件配置。
-
-        没有剩余关系的认证源会保留为孤儿态。
-        """
-        local_idps = list(
-            Idp.objects.filter(
-                plugin_id=BuiltinIdpPluginEnum.LOCAL,
-                data_source_relations__data_source=data_source,
-            ).distinct()
-        )
-
-        IdpDataSourceRelation.objects.filter(data_source=data_source).delete()
-
-        for idp in local_idps:
-            IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
-
-    @staticmethod
-    @transaction.atomic()
     def set_real_relations_from_match_rules(idp: Idp, match_rules: List[DataSourceMatchRule]) -> None:
         """按显式生效范围 diff 刷新 idp 的实名数据源关系（新增/更新/删除）。
 
@@ -244,6 +225,25 @@ class IdpDataSourceRelationHandler:
                 rel.save(update_fields=["field_compare_rules", "updated_at"])
 
         IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
+
+    @staticmethod
+    @transaction.atomic()
+    def remove_data_source_relations(data_source: DataSource) -> None:
+        """删除指定数据源的全部认证源关系，并同步受影响的本地登录插件配置。
+
+        没有剩余关系的认证源会保留为孤儿态。
+        """
+        local_idps = list(
+            Idp.objects.filter(
+                plugin_id=BuiltinIdpPluginEnum.LOCAL,
+                data_source_relations__data_source=data_source,
+            ).distinct()
+        )
+
+        IdpDataSourceRelation.objects.filter(data_source=data_source).delete()
+
+        for idp in local_idps:
+            IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
 
     @staticmethod
     @transaction.atomic()
