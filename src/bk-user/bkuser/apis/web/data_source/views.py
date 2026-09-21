@@ -20,7 +20,6 @@ import logging
 import openpyxl
 from django.conf import settings
 from django.db import transaction
-from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import generics, status
@@ -59,8 +58,6 @@ from bkuser.apps.data_source.models import (
     DataSourceUser,
     DataSourceUsernameGenerateConfig,
 )
-from bkuser.apps.idp.constants import IdpStatus
-from bkuser.apps.idp.models import Idp, IdpDataSourceRelation, IdpSensitiveInfo
 from bkuser.apps.permission.constants import PermAction
 from bkuser.apps.permission.permissions import perm_class
 from bkuser.apps.sync.constants import SyncTaskTrigger
@@ -283,36 +280,13 @@ class DataSourceRetrieveUpdateDestroyApi(
         if not data_source.is_real_type:
             raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("仅可删除实体类型数据源"))
 
-        idp_deletion_plan = IdpDataSourceRelationHandler.classify_idps_for_deletion(data_source)
-
         # 【审计】创建数据源审计对象并记录变更前数据
         auditor = DataSourceAuditor(request.user.username, data_source.owner_tenant_id)
-        auditor.pre_record_data_before(data_source, list(idp_deletion_plan.to_delete))
+        auditor.pre_record_data_before(data_source)
 
         with transaction.atomic():
-            # 删除实名数据源关联的 IDP
-            if idp_deletion_plan.to_delete:
-                # 删除认证源敏感信息
-                IdpSensitiveInfo.objects.filter(idp__in=idp_deletion_plan.to_delete).delete()
-                Idp.objects.filter(id__in=[idp.id for idp in idp_deletion_plan.to_delete]).delete()
-
-            IdpDataSourceRelation.objects.filter(
-                idp_owner_tenant_id=data_source.owner_tenant_id,
-                data_source=data_source,
-            ).delete()
-
-            # 禁用认证源
-            if idp_deletion_plan.to_disable:
-                Idp.objects.filter(id__in=[idp.id for idp in idp_deletion_plan.to_disable]).update(
-                    status=IdpStatus.DISABLED,
-                    updated_at=timezone.now(),
-                    updater=request.user.username,
-                )
-
-            # 同步本地 IDP 插件配置
-            for idp in idp_deletion_plan.to_sync_local:
-                IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
-
+            # 删除数据源与 IDP 的关联关系
+            IdpDataSourceRelationHandler.remove_data_source_relations(data_source)
             # 删除数据源 & 关联资源数据
             DataSourceHandler.delete_data_source_and_related_resources(data_source)
 

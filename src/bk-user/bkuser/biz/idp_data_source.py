@@ -14,9 +14,7 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import List
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -32,15 +30,6 @@ from bkuser.common.error_codes import error_codes
 from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
 from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
 from bkuser.plugins.constants import DataSourcePluginEnum
-
-
-@dataclass
-class IdpDeletionPlan:
-    """删除实名数据源时，对相关 IDP 的处置方案"""
-
-    to_delete: List[Idp] = field(default_factory=list)
-    to_disable: List[Idp] = field(default_factory=list)
-    to_sync_local: List[Idp] = field(default_factory=list)
 
 
 class IdpDataSourceRelationHandler:
@@ -166,7 +155,7 @@ class IdpDataSourceRelationHandler:
         return bool(set(idp_ids) - related_idp_ids)
 
     @staticmethod
-    def sync_local_plugin_config(idp: Idp) -> None:
+    def _sync_local_plugin_config(idp: Idp) -> None:
         """将 IDP 当前关联的数据源 ID 同步到本地登录插件配置中。
 
         仅对本地登录源生效；非本地插件静默跳过。
@@ -178,6 +167,25 @@ class IdpDataSourceRelationHandler:
         idp.set_plugin_cfg(
             LocalIdpPluginConfig(data_source_ids=IdpDataSourceRelationHandler.get_relation_data_source_ids(idp))
         )
+
+    @staticmethod
+    @transaction.atomic()
+    def remove_data_source_relations(data_source: DataSource) -> None:
+        """删除指定数据源的全部认证源关系，并同步受影响的本地登录插件配置。
+
+        没有剩余关系的认证源会保留为孤儿态。
+        """
+        local_idps = list(
+            Idp.objects.filter(
+                plugin_id=BuiltinIdpPluginEnum.LOCAL,
+                data_source_relations__data_source=data_source,
+            ).distinct()
+        )
+
+        IdpDataSourceRelation.objects.filter(data_source=data_source).delete()
+
+        for idp in local_idps:
+            IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
 
     @staticmethod
     @transaction.atomic()
@@ -235,90 +243,16 @@ class IdpDataSourceRelationHandler:
                 rel.field_compare_rules = target[ds_id]
                 rel.save(update_fields=["field_compare_rules", "updated_at"])
 
-        IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
-
-    @staticmethod
-    def classify_idps_for_deletion(data_source: DataSource) -> IdpDeletionPlan:
-        """根据 IDP 与待删除实名数据源的关联情况，决定各 IDP 的处置策略：
-
-        - 删除后仍有其他实名数据源关联：本地 IDP 需同步插件配置，其他类型无需处理
-        - 删除后无其他实名数据源关联：本地 IDP → 删除，否则 → 禁用
-        - 孤儿 IDP（无任何关系记录）：与本次删除操作无关，不在此处处理
-        """
-
-        real_idp_ds_map, idp_map = IdpDataSourceRelationHandler._get_real_idp_relation_map(data_source.owner_tenant_id)
-
-        plan = IdpDeletionPlan()
-        for idp_id, ds_ids in real_idp_ds_map.items():
-            # 与待删除数据源无关的 IDP，跳过
-            if data_source.id not in ds_ids:
-                continue
-
-            idp = idp_map[idp_id]
-            # 删除后仍然有其他实名数据源关联，本地 IDP 需同步插件配置
-            if len(ds_ids) > 1:
-                if idp.is_local:
-                    plan.to_sync_local.append(idp)
-            # 删除后无其他实名数据源关联，本地 IDP → 删除，否则 → 禁用
-            elif idp.is_local:
-                plan.to_delete.append(idp)
-            else:
-                plan.to_disable.append(idp)
-
-        return plan
-
-    @staticmethod
-    def _get_real_idp_relation_map(owner_tenant_id: str) -> Tuple[Dict[str, List[int]], Dict[str, Idp]]:
-        """获取当前租户下实名数据源的 IDP 关系映射及相关 IDP"""
-        real_idp_ds_map: Dict[str, List[int]] = defaultdict(list)
-        relations = IdpDataSourceRelation.objects.filter(
-            idp_owner_tenant_id=owner_tenant_id,
-            data_source__type=DataSourceTypeEnum.REAL,
-        ).values("idp_id", "data_source_id")
-        for rel in relations:
-            real_idp_ds_map[rel["idp_id"]].append(rel["data_source_id"])
-
-        idp_map = {idp.id: idp for idp in Idp.objects.filter(owner_tenant_id=owner_tenant_id, id__in=real_idp_ds_map)}
-        return real_idp_ds_map, idp_map
-
-    @staticmethod
-    @transaction.atomic()
-    def set_local_real_relations(idp: Idp, data_sources: List[DataSource]) -> None:
-        """为本地登录源建立与同租户指定本地实名数据源的关系，并使用默认匹配规则。
-
-        - 先清除后全量重建，因此 data_sources 即最终生效范围，未包含的本地实名源关系会被删除
-        - 只处理 plugin_id=local 的 REAL 数据源关系，虚拟/内置管理关系不受影响
-        """
-        if not data_sources:
-            return
-        data_source_ids = [ds.id for ds in data_sources]
-
-        IdpDataSourceRelation.objects.filter(
-            idp=idp,
-            data_source__type=DataSourceTypeEnum.REAL,
-            data_source__plugin_id=DataSourcePluginEnum.LOCAL,
-        ).delete()
-        IdpDataSourceRelation.objects.bulk_create(
-            [
-                IdpDataSourceRelation(
-                    idp=idp,
-                    data_source_id=data_source_id,
-                    idp_owner_tenant_id=idp.owner_tenant_id,
-                    field_compare_rules=[
-                        rule.model_dump()
-                        for rule in gen_data_source_match_rule_of_local(data_source_id).field_compare_rules
-                    ],
-                )
-                for data_source_id in data_source_ids
-            ]
-        )
-        IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
+        IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
 
     @staticmethod
     @transaction.atomic()
     def set_builtin_management_relation(idp: Idp, data_source: DataSource) -> None:
         """为内置管理登录源设置唯一的数据源关系（先清除再创建），用于租户初始化流程"""
-        IdpDataSourceRelation.objects.filter(idp=idp).delete()
+        IdpDataSourceRelation.objects.filter(
+            idp=idp,
+            data_source__type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
+        ).delete()
         IdpDataSourceRelation.objects.create(
             idp=idp,
             data_source=data_source,
@@ -327,4 +261,4 @@ class IdpDataSourceRelationHandler:
                 rule.model_dump() for rule in gen_data_source_match_rule_of_local(data_source.id).field_compare_rules
             ],
         )
-        IdpDataSourceRelationHandler.sync_local_plugin_config(idp)
+        IdpDataSourceRelationHandler._sync_local_plugin_config(idp)

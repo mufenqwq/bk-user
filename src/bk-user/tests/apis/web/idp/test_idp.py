@@ -57,6 +57,17 @@ def data_source_match_rules(bare_general_data_source) -> List[Dict[str, Any]]:
     ]
 
 
+@pytest.fixture
+def local_data_source_match_rules(bare_local_data_source) -> List[Dict[str, Any]]:
+    """本地账密认证源的匹配规则，固定为 id -> id"""
+    return [
+        {
+            "data_source_id": bare_local_data_source.id,
+            "field_compare_rules": [{"source_field": "id", "target_field": "id"}],
+        }
+    ]
+
+
 def get_idp_match_rules(idp: Idp) -> List[Dict[str, Any]]:
     relation = IdpDataSourceRelation.objects.filter(idp=idp).first()
     if relation is None:
@@ -153,7 +164,9 @@ class TestIdpCreateApi:
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert "认证源插件不存在" in resp.data["message"]
 
-    def test_create_with_not_allowed_local_idp(self, api_client, data_source_match_rules):
+    def test_create_with_local_idp(
+        self, api_client, random_tenant, bare_local_data_source, local_data_source_match_rules
+    ):
         resp = api_client.post(
             reverse("idp.list_create"),
             data={
@@ -161,11 +174,84 @@ class TestIdpCreateApi:
                 "status": IdpStatus.ENABLED,
                 "plugin_id": BuiltinIdpPluginEnum.LOCAL,
                 "plugin_config": {},
-                "data_source_match_rules": data_source_match_rules,
+                "data_source_match_rules": local_data_source_match_rules,
+            },
+        )
+        assert resp.status_code == status.HTTP_201_CREATED
+
+        idp = Idp.objects.get(id=resp.data["id"])
+        assert idp.plugin_config["data_source_ids"] == [bare_local_data_source.id]
+        assert set(IdpDataSourceRelation.objects.filter(idp=idp).values_list("data_source_id", flat=True)) == {
+            bare_local_data_source.id
+        }
+
+        detail = api_client.get(reverse("idp.retrieve_update", kwargs={"id": idp.id}))
+        assert {rule["data_source_id"] for rule in detail.data["data_source_match_rules"]} == {
+            bare_local_data_source.id
+        }
+
+    def test_create_local_idp_rejects_non_local_data_source(self, api_client, random_tenant, bare_general_data_source):
+        resp = api_client.post(
+            reverse("idp.list_create"),
+            data={
+                "name": generate_random_string(),
+                "status": IdpStatus.ENABLED,
+                "plugin_id": BuiltinIdpPluginEnum.LOCAL,
+                "plugin_config": {},
+                "data_source_match_rules": [
+                    {
+                        "data_source_id": bare_general_data_source.id,
+                        "field_compare_rules": [{"source_field": "id", "target_field": "id"}],
+                    }
+                ],
             },
         )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "不允许创建本地账密认证源" in resp.data["message"]
+        assert "本地认证源的生效范围仅允许选择本地实名数据源" in resp.data["message"]
+
+    def test_create_local_idp_rejects_non_id_field_compare_rule(
+        self, api_client, random_tenant, bare_local_data_source
+    ):
+        resp = api_client.post(
+            reverse("idp.list_create"),
+            data={
+                "name": generate_random_string(),
+                "status": IdpStatus.ENABLED,
+                "plugin_id": BuiltinIdpPluginEnum.LOCAL,
+                "plugin_config": {},
+                "data_source_match_rules": [
+                    {
+                        "data_source_id": bare_local_data_source.id,
+                        "field_compare_rules": [{"source_field": "user_id", "target_field": "username"}],
+                    }
+                ],
+            },
+        )
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "本地认证源的字段匹配规则固定为 id -> id" in resp.data["message"]
+
+    def test_create_non_local_idp_rejects_id_source_field(
+        self, api_client, wecom_plugin_cfg, bare_general_data_source
+    ):
+        resp = api_client.post(
+            reverse("idp.list_create"),
+            data={
+                "name": generate_random_string(),
+                "status": IdpStatus.ENABLED,
+                "plugin_id": BuiltinIdpPluginEnum.WECOM,
+                "plugin_config": wecom_plugin_cfg,
+                "data_source_match_rules": [
+                    {
+                        "data_source_id": bare_general_data_source.id,
+                        "field_compare_rules": [{"source_field": "id", "target_field": "username"}],
+                    }
+                ],
+            },
+        )
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "id 不符合认证源字段的命名规范" in resp.data["message"]
 
     def test_create_with_invalid_plugin_config(self, api_client, data_source_match_rules):
         request_data = {
@@ -188,6 +274,7 @@ class TestIdpCreateApi:
     def test_create_with_invalid_data_source_match_rules(self, api_client, wecom_plugin_cfg, bare_general_data_source):
         request_data = {
             "name": generate_random_string(),
+            "status": IdpStatus.ENABLED,
             "plugin_id": BuiltinIdpPluginEnum.WECOM,
             "plugin_config": wecom_plugin_cfg,
             "data_source_match_rules": [
@@ -406,68 +493,44 @@ class TestIdpStatusUpdateApi:
         assert api_client.put(url).data["status"] == IdpStatus.ENABLED
 
 
-class TestLocalIdpCreateApi:
-    def test_create_rejects_duplicate_data_source_ids(self, api_client, random_tenant, bare_local_data_source):
-        resp = api_client.post(
-            reverse("idp.local.create"),
-            data={
-                "name": generate_random_string(),
-                "status": IdpStatus.ENABLED,
-                "data_source_ids": [bare_local_data_source.id, bare_local_data_source.id],
-            },
-        )
+class TestLocalIdpApi:
+    """本地账密认证源与其它认证源共用通用接口，仅生效范围与插件配置有特殊处理"""
 
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "生效范围数据源 ID 不能重复" in resp.data["message"]
-
-    def test_create(self, api_client, random_tenant, bare_local_data_source):
-        resp = api_client.post(
-            reverse("idp.local.create"),
-            data={
-                "name": generate_random_string(),
-                "status": IdpStatus.ENABLED,
-                "data_source_ids": [bare_local_data_source.id],
-            },
-        )
-        assert resp.status_code == status.HTTP_201_CREATED
-
-        idp = Idp.objects.get(id=resp.data["id"])
-        assert list(IdpDataSourceRelation.objects.filter(idp=idp).values_list("data_source_id", flat=True)) == [
-            bare_local_data_source.id
-        ]
-        assert idp.plugin_config["data_source_ids"] == [bare_local_data_source.id]
-
-        detail = api_client.get(reverse("idp.local.retrieve_update", kwargs={"id": idp.id}))
-        assert set(detail.data) == {"id", "name", "status", "data_source_ids"}
-        assert detail.data["data_source_ids"] == [bare_local_data_source.id]
-
-    def test_create_rejects_non_local_data_source(self, api_client, random_tenant, bare_general_data_source):
-        resp = api_client.post(
-            reverse("idp.local.create"),
-            data={
-                "name": generate_random_string(),
-                "status": IdpStatus.ENABLED,
-                "data_source_ids": [bare_general_data_source.id],
-            },
-        )
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "当前租户下不存在 ID 为" in resp.data["message"]
-
-    def test_create_rejects_duplicate(self, api_client, random_tenant, bare_local_data_source):
-        payload = {
+    @staticmethod
+    def _build_payload(data_sources: List[DataSource], **kwargs: Any) -> Dict[str, Any]:
+        """构造本地认证源的通用接口请求体，匹配规则固定为 id -> id"""
+        payload: Dict[str, Any] = {
             "name": generate_random_string(),
             "status": IdpStatus.ENABLED,
-            "data_source_ids": [bare_local_data_source.id],
+            "plugin_id": BuiltinIdpPluginEnum.LOCAL,
+            "plugin_config": {},
+            "data_source_match_rules": [
+                {
+                    "data_source_id": ds.id,
+                    "field_compare_rules": [{"source_field": "id", "target_field": "id"}],
+                }
+                for ds in data_sources
+            ],
         }
-        assert api_client.post(reverse("idp.local.create"), data=payload).status_code == status.HTTP_201_CREATED
+        payload.update(kwargs)
+        return payload
+
+    def test_create_rejects_duplicate(self, api_client, random_tenant, bare_local_data_source):
+        payload = self._build_payload([bare_local_data_source])
+        assert api_client.post(reverse("idp.list_create"), data=payload).status_code == status.HTTP_201_CREATED
 
         payload["name"] = generate_random_string()
-        resp = api_client.post(reverse("idp.local.create"), data=payload)
+        resp = api_client.post(reverse("idp.list_create"), data=payload)
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "本地账密登录已存在" in resp.data["message"]
+        assert f"{BuiltinIdpPluginEnum.LOCAL} 类型的认证源已存在" in resp.data["message"]
 
+    def test_create_ignores_request_plugin_config(self, api_client, random_tenant, bare_local_data_source):
+        """本地认证源的 data_source_ids 由生效范围同步，请求体传入的插件配置不生效"""
+        payload = self._build_payload([bare_local_data_source], plugin_config={"data_source_ids": [99999999]})
+        resp = api_client.post(reverse("idp.list_create"), data=payload)
+        assert resp.status_code == status.HTTP_201_CREATED
+        assert Idp.objects.get(id=resp.data["id"]).plugin_config["data_source_ids"] == [bare_local_data_source.id]
 
-class TestLocalIdpUpdateApi:
     def test_update_shrink_scope_preserves_data_source_password_config(
         self, api_client, random_tenant, bare_local_data_source, local_ds_plugin, local_ds_plugin_cfg
     ):
@@ -483,26 +546,13 @@ class TestLocalIdpUpdateApi:
             other_data_source.id: other_data_source.plugin_config,
         }
 
-        idp_name = generate_random_string()
-        resp = api_client.post(
-            reverse("idp.local.create"),
-            data={
-                "name": idp_name,
-                "status": IdpStatus.ENABLED,
-                "data_source_ids": [bare_local_data_source.id, other_data_source.id],
-            },
-        )
+        payload = self._build_payload([bare_local_data_source, other_data_source])
+        resp = api_client.post(reverse("idp.list_create"), data=payload)
         assert resp.status_code == status.HTTP_201_CREATED
         idp_id = resp.data["id"]
 
-        resp = api_client.put(
-            reverse("idp.local.retrieve_update", kwargs={"id": idp_id}),
-            data={
-                "name": idp_name,
-                "status": IdpStatus.ENABLED,
-                "data_source_ids": [bare_local_data_source.id],
-            },
-        )
+        payload["data_source_match_rules"] = payload["data_source_match_rules"][:1]
+        resp = api_client.put(reverse("idp.retrieve_update", kwargs={"id": idp_id}), data=payload)
         assert resp.status_code == status.HTTP_204_NO_CONTENT
 
         bare_local_data_source.refresh_from_db()
@@ -514,3 +564,13 @@ class TestLocalIdpUpdateApi:
             bare_local_data_source.id
         ]
         assert Idp.objects.get(id=idp_id).plugin_config["data_source_ids"] == [bare_local_data_source.id]
+
+    def test_update_status(self, api_client, random_tenant, bare_local_data_source):
+        """本地认证源与其它认证源一致，支持启停"""
+        resp = api_client.post(reverse("idp.list_create"), data=self._build_payload([bare_local_data_source]))
+        idp_id = resp.data["id"]
+
+        resp = api_client.put(reverse("idp.update_status", kwargs={"id": idp_id}))
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data["status"] == IdpStatus.DISABLED
+        assert Idp.objects.get(id=idp_id).status == IdpStatus.DISABLED

@@ -26,6 +26,7 @@ from rest_framework.exceptions import ValidationError
 from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.idp.constants import IdpStatus
+from bkuser.apps.idp.data_models import gen_field_compare_rules_of_local
 from bkuser.apps.idp.models import Idp, IdpPlugin
 from bkuser.apps.tenant.models import TenantUserCustomField, UserBuiltinField
 from bkuser.biz.idp_data_source import IdpDataSourceRelationHandler
@@ -68,13 +69,28 @@ def _validate_duplicate_idp_name(name: str, tenant_id: str, idp_id: str = "") ->
     return name
 
 
-def _validate_data_source_match_rules(
-    data_source_match_rules: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+def _validate_duplicate_data_source_match_rules(data_source_match_rules: List[Dict[str, Any]]) -> None:
     """校验数据源匹配规则中的生效范围数据源 ID 不重复"""
     data_source_ids = [rule["data_source_id"] for rule in data_source_match_rules]
     if len(data_source_ids) != len(set(data_source_ids)):
         raise ValidationError(_("数据源匹配规则不能重复"))
+
+
+def _validate_local_data_source_match_rules(
+    tenant_id: str, data_source_match_rules: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """本地账密认证源的生效范围只允许选择本地实名数据源"""
+    data_source_ids = {rule["data_source_id"] for rule in data_source_match_rules}
+    local_data_source_ids = set(
+        DataSource.objects.filter(
+            id__in=data_source_ids,
+            owner_tenant_id=tenant_id,
+            type=DataSourceTypeEnum.REAL,
+            plugin_id=DataSourcePluginEnum.LOCAL,
+        ).values_list("id", flat=True)
+    )
+    if invalid_ids := data_source_ids - local_data_source_ids:
+        raise ValidationError(_("本地认证源的生效范围仅允许选择本地实名数据源，不合法数据源：{}").format(invalid_ids))
 
     return data_source_match_rules
 
@@ -82,7 +98,7 @@ def _validate_data_source_match_rules(
 SOURCE_FIELD_REGEX = re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,30}[a-zA-Z0-9]$")
 
 
-def _validate_source_field(value):
+def _validate_source_field(value: str) -> None:
     """校验认证源字段命名规则"""
     if not re.fullmatch(SOURCE_FIELD_REGEX, value):
         raise ValidationError(
@@ -92,8 +108,48 @@ def _validate_source_field(value):
         )
 
 
+def _validate_field_compare_rules(
+    tenant_id: str, plugin_id: str, data_source_match_rules: List[Dict[str, Any]]
+) -> None:
+    """根据认证源类型校验字段匹配规则"""
+    if plugin_id == BuiltinIdpPluginEnum.LOCAL:
+        _validate_local_field_compare_rules(data_source_match_rules)
+        return
+
+    builtin_fields = set(UserBuiltinField.objects.all().values_list("name", flat=True))
+    custom_fields = set(TenantUserCustomField.objects.filter(tenant_id=tenant_id).values_list("name", flat=True))
+    allowed_target_fields = builtin_fields | custom_fields
+
+    for match_rule in data_source_match_rules:
+        for compare_rule in match_rule["field_compare_rules"]:
+            _validate_source_field(compare_rule["source_field"])
+            if compare_rule["target_field"] not in allowed_target_fields:
+                raise ValidationError(
+                    _("匹配的数据源字段 {} 不属于用户自定义字段或内置字段").format(compare_rule["target_field"])
+                )
+
+
+def _validate_local_field_compare_rules(data_source_match_rules: List[Dict[str, Any]]) -> None:
+    expected_rules = [rule.model_dump() for rule in gen_field_compare_rules_of_local()]
+    for match_rule in data_source_match_rules:
+        if match_rule["field_compare_rules"] != expected_rules:
+            raise ValidationError(_("本地认证源的字段匹配规则固定为 id -> id"))
+
+
+def _validate_data_source_match_rules(
+    tenant_id: str, plugin_id: str, data_source_match_rules: List[Dict[str, Any]]
+) -> None:
+    """校验认证源的数据源匹配规则"""
+    _validate_duplicate_data_source_match_rules(data_source_match_rules)
+
+    if plugin_id == BuiltinIdpPluginEnum.LOCAL:
+        _validate_local_data_source_match_rules(tenant_id, data_source_match_rules)
+
+    _validate_field_compare_rules(tenant_id, plugin_id, data_source_match_rules)
+
+
 class FieldCompareRuleSLZ(serializers.Serializer):
-    source_field = serializers.CharField(help_text="认证源原始字段", validators=[_validate_source_field])
+    source_field = serializers.CharField(help_text="认证源原始字段")
     target_field = serializers.CharField(help_text="匹配的数据源字段")
 
 
@@ -110,15 +166,6 @@ class DataSourceMatchRuleSLZ(serializers.Serializer):
             id=attrs["data_source_id"], owner_tenant_id=tenant_id, type=DataSourceTypeEnum.REAL
         ).exists():
             raise ValidationError(_("当前租户下不存在 ID 为 {} 的实名数据源").format(attrs["data_source_id"]))
-
-        # 匹配的数据源字段必须是当前租户的用户字段，包括内建字段和自定义字段
-        builtin_fields = set(UserBuiltinField.objects.all().values_list("name", flat=True))
-        custom_fields = set(TenantUserCustomField.objects.filter(tenant_id=tenant_id).values_list("name", flat=True))
-        allowed_target_fields = builtin_fields | custom_fields
-
-        target_fields = {r.get("target_field") for r in attrs["field_compare_rules"]}
-        if not_found_fields := target_fields - allowed_target_fields:
-            raise ValidationError(_("匹配的数据源字段 {} 不属于用户自定义字段或内置字段").format(not_found_fields))
 
         return attrs
 
@@ -139,13 +186,7 @@ class IdpCreateInputSLZ(serializers.Serializer):
         if not IdpPlugin.objects.filter(id=plugin_id).exists():
             raise ValidationError(_("认证源插件不存在"))
 
-        if plugin_id == BuiltinIdpPluginEnum.LOCAL:
-            raise ValidationError(_("不允许创建本地账密认证源"))
-
         return plugin_id
-
-    def validate_data_source_match_rules(self, data_source_match_rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return _validate_data_source_match_rules(data_source_match_rules)
 
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
         plugin_id = attrs["plugin_id"]
@@ -159,10 +200,19 @@ class IdpCreateInputSLZ(serializers.Serializer):
         except NotImplementedError:
             raise ValidationError(_("认证源插件 {} 不存在").format(plugin_id))
 
-        try:
-            attrs["plugin_config"] = cfg_cls(**attrs["plugin_config"])
-        except PDValidationError as e:
-            raise ValidationError(_("认证源插件配置不合法：{}").format(stringify_pydantic_error(e)))
+        if plugin_id == BuiltinIdpPluginEnum.LOCAL:
+            # 本地认证源无插件配置，data_source_ids 由生效范围（匹配关系）同步，不接受请求体入参
+            if attrs["plugin_config"]:
+                raise ValidationError(_("本地认证源无插件配置"))
+
+            attrs["plugin_config"] = cfg_cls()
+        else:
+            try:
+                attrs["plugin_config"] = cfg_cls(**attrs["plugin_config"])
+            except PDValidationError as e:
+                raise ValidationError(_("认证源插件配置不合法：{}").format(stringify_pydantic_error(e)))
+
+        _validate_data_source_match_rules(self.context["tenant_id"], plugin_id, attrs["data_source_match_rules"])
 
         return attrs
 
@@ -203,11 +253,15 @@ class IdpUpdateInputSLZ(serializers.Serializer):
     def validate_name(self, name: str) -> str:
         return _validate_duplicate_idp_name(name, self.context["tenant_id"], self.context["idp_id"])
 
-    def validate_data_source_match_rules(self, data_source_match_rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return _validate_data_source_match_rules(data_source_match_rules)
-
     def validate_plugin_config(self, plugin_config: Dict[str, Any]) -> BasePluginConfig:
         cfg_cls = get_plugin_cfg_cls(self.context["plugin_id"])
+
+        # 本地认证源无插件配置，data_source_ids 由生效范围（匹配关系）同步，不接受请求体入参
+        if self.context["plugin_id"] == BuiltinIdpPluginEnum.LOCAL:
+            if plugin_config:
+                raise ValidationError(_("本地认证源无插件配置"))
+
+            return cfg_cls()
 
         # 将敏感信息填充回 plugin_config，一并进行校验
         for info in self.context["exists_sensitive_infos"]:
@@ -219,55 +273,12 @@ class IdpUpdateInputSLZ(serializers.Serializer):
         except PDValidationError as e:
             raise ValidationError(_("认证源插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
-
-class IdpSwitchStatusOutputSLZ(serializers.Serializer):
-    status = serializers.ChoiceField(help_text="认证源状态", choices=IdpStatus.get_choices())
-
-
-class LocalIdpUpdateInputSLZ(serializers.Serializer):
-    name = serializers.CharField(help_text="认证源名称", max_length=128)
-    status = serializers.ChoiceField(help_text="认证源状态", choices=IdpStatus.get_choices())
-    data_source_ids = serializers.ListField(
-        help_text="生效范围数据源 ID 列表", child=serializers.IntegerField(), allow_empty=False, min_length=1
-    )
-
-    def validate_name(self, name: str) -> str:
-        return _validate_duplicate_idp_name(name, self.context["tenant_id"], self.context["idp_id"])
-
-    def validate_data_source_ids(self, data_source_ids: List[int]) -> List[int]:
-        if len(data_source_ids) != len(set(data_source_ids)):
-            raise ValidationError(_("生效范围数据源 ID 不能重复"))
-
-        tenant_id = self.context["tenant_id"]
-        exists_ids = set(
-            DataSource.objects.filter(
-                id__in=data_source_ids,
-                owner_tenant_id=tenant_id,
-                type=DataSourceTypeEnum.REAL,
-                plugin_id=DataSourcePluginEnum.LOCAL,
-            ).values_list("id", flat=True)
-        )
-        if not_found := set(data_source_ids) - exists_ids:
-            raise ValidationError(_("当前租户下不存在 ID 为 {} 的本地数据源").format(not_found))
-        return data_source_ids
-
-
-class LocalIdpCreateInputSLZ(LocalIdpUpdateInputSLZ):
-    def validate_name(self, name: str) -> str:
-        return _validate_duplicate_idp_name(name, self.context["tenant_id"])
-
     def validate(self, attrs: Dict[str, Any]) -> Dict[str, Any]:
-        # 检查是否已经存在对应的认证源
-        if IdpDataSourceRelationHandler.has_duplicate_plugin_real_relation(
-            self.context["tenant_id"], idp_plugin_id=BuiltinIdpPluginEnum.LOCAL
-        ):
-            raise ValidationError(_("本地账密登录已存在"))
+        plugin_id = self.context["plugin_id"]
+        _validate_data_source_match_rules(self.context["tenant_id"], plugin_id, attrs["data_source_match_rules"])
 
         return attrs
 
 
-class LocalIdpRetrieveOutputSLZ(serializers.Serializer):
-    id = serializers.CharField(help_text="认证源唯一标识")
-    name = serializers.CharField(help_text="认证源名称")
+class IdpSwitchStatusOutputSLZ(serializers.Serializer):
     status = serializers.ChoiceField(help_text="认证源状态", choices=IdpStatus.get_choices())
-    data_source_ids = serializers.ListField(help_text="生效范围数据源 ID 列表", child=serializers.IntegerField())

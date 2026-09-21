@@ -16,15 +16,12 @@
 # to the current version of the project delivered to anyone in the future.
 
 from django.db import transaction
-from django.utils.translation import gettext_lazy as _
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from bkuser.apis.web.mixins import CurrentUserTenantMixin
-from bkuser.apps.data_source.constants import DataSourceTypeEnum
-from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.idp.constants import IdpStatus
 from bkuser.apps.idp.data_models import DataSourceMatchRule
 from bkuser.apps.idp.models import Idp, IdpPlugin, IdpSensitiveInfo
@@ -34,9 +31,6 @@ from bkuser.biz.auditor import IdpAuditor
 from bkuser.biz.idp_data_source import IdpDataSourceRelationHandler
 from bkuser.common.error_codes import error_codes
 from bkuser.common.views import ExcludePatchAPIViewMixin
-from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
-from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
-from bkuser.plugins.constants import DataSourcePluginEnum
 
 from .schema import get_idp_plugin_cfg_json_schema, get_idp_plugin_cfg_openapi_schema_map
 from .serializers import (
@@ -49,9 +43,6 @@ from .serializers import (
     IdpRetrieveOutputSLZ,
     IdpSwitchStatusOutputSLZ,
     IdpUpdateInputSLZ,
-    LocalIdpCreateInputSLZ,
-    LocalIdpRetrieveOutputSLZ,
-    LocalIdpUpdateInputSLZ,
 )
 
 
@@ -199,9 +190,6 @@ class IdpRetrieveUpdateApi(CurrentUserTenantMixin, generics.RetrieveUpdateAPIVie
     )
     def put(self, request, *args, **kwargs):
         idp = self.get_object()
-        if idp.is_local:
-            raise error_codes.CANNOT_UPDATE_IDP.f(_("该 API 不支持本地账密认证源更新配置"))
-
         current_tenant_id = self.get_current_tenant_id()
         slz = IdpUpdateInputSLZ(
             data=request.data,
@@ -246,12 +234,11 @@ class IdpStatusUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin, gener
 
     def get_queryset(self):
         # Note: 【防御性】当前产品页面未提供仅启停的功能
-        #  1. 账密登录的启停涉及到密码功能启用，不能通过简单方式启停
-        #  2. 无效数据源对应的认证源，需要经过修改后才可以启用
+        #  无效数据源对应的认证源，需要经过修改后才可以启用
         return Idp.objects.filter(
             owner_tenant_id=self.get_current_tenant_id(),
             id__in=IdpDataSourceRelationHandler.get_real_idp_ids(self.get_current_tenant_id()),
-        ).exclude(plugin_id=BuiltinIdpPluginEnum.LOCAL)
+        )
 
     @swagger_auto_schema(
         tags=["idp"],
@@ -265,138 +252,3 @@ class IdpStatusUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin, gener
         idp.save(update_fields=["status", "updater", "updated_at"])
 
         return Response(IdpSwitchStatusOutputSLZ(instance={"status": idp.status.value}).data)
-
-
-class LocalIdpCreateApi(CurrentUserTenantMixin, generics.CreateAPIView):
-    """本地账密登录"""
-
-    permission_classes = [IsAuthenticated, perm_class(PermAction.MANAGE_TENANT)]
-
-    @swagger_auto_schema(
-        tags=["idp"],
-        operation_description="新建本地账密认证源",
-        request_body=LocalIdpCreateInputSLZ(),
-        responses={status.HTTP_201_CREATED: IdpCreateOutputSLZ()},
-    )
-    def post(self, request, *args, **kwargs):
-        current_tenant_id = self.get_current_tenant_id()
-        slz = LocalIdpCreateInputSLZ(data=request.data, context={"tenant_id": current_tenant_id})
-        slz.is_valid(raise_exception=True)
-        data = slz.validated_data
-        current_user = request.user.username
-
-        # 检测本地账密数据源是否存在
-        data_sources = list(
-            DataSource.objects.filter(
-                id__in=data["data_source_ids"],
-                owner_tenant_id=current_tenant_id,
-                type=DataSourceTypeEnum.REAL,
-                plugin_id=DataSourcePluginEnum.LOCAL,
-            )
-        )
-
-        with transaction.atomic():
-            idp = Idp.objects.create(
-                name=data["name"],
-                status=data["status"],
-                owner_tenant_id=current_tenant_id,
-                plugin_id=BuiltinIdpPluginEnum.LOCAL,
-                plugin_config=LocalIdpPluginConfig(data_source_ids=[ds.id for ds in data_sources]),
-                creator=current_user,
-                updater=current_user,
-            )
-            IdpDataSourceRelationHandler.set_local_real_relations(idp, data_sources)
-
-        # 【审计】创建认证源审计对象
-        auditor = IdpAuditor(request.user.username, current_tenant_id)
-        # 【审计】将审计记录保存至数据库
-        auditor.record_create(idp)
-
-        return Response(IdpCreateOutputSLZ(instance=idp).data, status=status.HTTP_201_CREATED)
-
-
-class LocalIdpRetrieveUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin, generics.RetrieveUpdateAPIView):
-    permission_classes = [IsAuthenticated, perm_class(PermAction.MANAGE_TENANT)]
-
-    lookup_url_kwarg = "id"
-
-    def get_queryset(self):
-        current_tenant_id = self.get_current_tenant_id()
-
-        return Idp.objects.filter(
-            owner_tenant_id=current_tenant_id,
-            id__in=IdpDataSourceRelationHandler.get_real_idp_ids(
-                current_tenant_id,
-                idp_plugin_id=BuiltinIdpPluginEnum.LOCAL,
-                data_source_plugin_id=DataSourcePluginEnum.LOCAL,
-            ),
-            plugin_id=BuiltinIdpPluginEnum.LOCAL,
-        )
-
-    @swagger_auto_schema(
-        tags=["idp"],
-        operation_description="本地认证源详情",
-        responses={status.HTTP_200_OK: LocalIdpRetrieveOutputSLZ()},
-    )
-    def get(self, request, *args, **kwargs):
-        idp = self.get_object()
-        data_source_ids = IdpDataSourceRelationHandler.get_relation_data_source_ids(
-            idp,
-            data_source_type=DataSourceTypeEnum.REAL,
-            data_source_plugin_id=DataSourcePluginEnum.LOCAL,
-        )
-
-        return Response(
-            LocalIdpRetrieveOutputSLZ(
-                instance={
-                    "id": idp.id,
-                    "name": idp.name,
-                    "status": idp.status,
-                    "data_source_ids": data_source_ids,
-                }
-            ).data
-        )
-
-    @swagger_auto_schema(
-        tags=["idp"],
-        operation_description="更新本地认证源",
-        request_body=LocalIdpUpdateInputSLZ(),
-        responses={status.HTTP_204_NO_CONTENT: ""},
-    )
-    def put(self, request, *args, **kwargs):
-        idp = self.get_object()
-        current_tenant_id = self.get_current_tenant_id()
-        slz = LocalIdpUpdateInputSLZ(
-            data=request.data,
-            context={
-                "tenant_id": current_tenant_id,
-                "idp_id": idp.id,
-            },
-        )
-        slz.is_valid(raise_exception=True)
-        data = slz.validated_data
-        data_sources = list(
-            DataSource.objects.filter(
-                id__in=data["data_source_ids"],
-                owner_tenant_id=current_tenant_id,
-                type=DataSourceTypeEnum.REAL,
-                plugin_id=DataSourcePluginEnum.LOCAL,
-            )
-        )
-
-        # 【审计】创建认证源审计对象并记录变更前数据
-        idp_auditor = IdpAuditor(request.user.username, current_tenant_id)
-        idp_auditor.pre_record_data_before(idp)
-
-        with transaction.atomic():
-            idp.name = data["name"]
-            idp.status = data["status"]
-            idp.updater = request.user.username
-            idp.save(update_fields=["name", "status", "updater", "updated_at"])
-            # 重建 IDP 与本地实名数据源的关系
-            IdpDataSourceRelationHandler.set_local_real_relations(idp, data_sources)
-
-        # 【审计】将审计记录保存至数据库
-        idp_auditor.record_update(idp)
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
