@@ -21,10 +21,11 @@ from bkuser.apps.data_source.constants import DataSourceTypeEnum
 from bkuser.apps.data_source.models import DataSource
 from bkuser.apps.idp.constants import IdpStatus
 from bkuser.apps.idp.data_models import DataSourceMatchRule
-from bkuser.apps.idp.models import Idp, IdpDataSourceRelation, IdpPlugin
+from bkuser.apps.idp.models import Idp, IdpDataSourceRelation, IdpPlugin, IdpSensitiveInfo
 from bkuser.biz.idp_data_source import IdpDataSourceRelationHandler
 from bkuser.common.constants import SENSITIVE_MASK
 from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
+from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
 from bkuser.idp_plugins.wecom.plugin import WecomIdpPluginConfig
 from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 from django.urls import reverse
@@ -185,7 +186,7 @@ class TestIdpCreateApi:
             bare_local_data_source.id
         }
 
-        detail = api_client.get(reverse("idp.retrieve_update", kwargs={"id": idp.id}))
+        detail = api_client.get(reverse("idp.retrieve_update_destroy", kwargs={"id": idp.id}))
         assert {rule["data_source_id"] for rule in detail.data["data_source_match_rules"]} == {
             bare_local_data_source.id
         }
@@ -328,7 +329,7 @@ class TestIdpListApi:
 class TestIdpUpdateApi:
     def test_update_rejects_missing_data_source_match_rules(self, api_client, wecom_idp, wecom_plugin_cfg):
         resp = api_client.put(
-            reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
             data={
                 "name": wecom_idp.name,
                 "status": IdpStatus.ENABLED,
@@ -347,7 +348,7 @@ class TestIdpUpdateApi:
             "secret": generate_random_string(),
         }
         resp = api_client.put(
-            reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
             data={
                 "name": new_name,
                 "status": IdpStatus.ENABLED,
@@ -379,7 +380,7 @@ class TestIdpUpdateApi:
             },
         ]
         resp = api_client.put(
-            reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
             data={
                 "name": wecom_idp.name,
                 "status": IdpStatus.ENABLED,
@@ -394,7 +395,7 @@ class TestIdpUpdateApi:
         )
         assert relation_ds_ids == {bare_general_data_source.id, bare_local_data_source.id}
 
-        detail = api_client.get(reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}))
+        detail = api_client.get(reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}))
         assert {r["data_source_id"] for r in detail.data["data_source_match_rules"]} == relation_ds_ids
 
     def test_update_rejects_empty_data_source_match_rules(self, api_client, wecom_idp, wecom_plugin_cfg):
@@ -404,7 +405,7 @@ class TestIdpUpdateApi:
         )
         for idp_status in (IdpStatus.ENABLED, IdpStatus.DISABLED):
             resp = api_client.put(
-                reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+                reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
                 data={
                     "name": wecom_idp.name,
                     "status": idp_status,
@@ -422,7 +423,7 @@ class TestIdpUpdateApi:
 
     def test_update_with_invalid_plugin_config(self, api_client, wecom_idp):
         resp = api_client.put(
-            reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
             data={
                 "name": wecom_idp.name,
                 "plugin_config": {},
@@ -433,7 +434,7 @@ class TestIdpUpdateApi:
         assert "认证源插件配置不合法" in resp.data["message"]
 
         resp = api_client.put(
-            reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
             data={
                 "name": wecom_idp.name,
                 "plugin_config": {"corp_id": generate_random_string()},
@@ -447,7 +448,7 @@ class TestIdpUpdateApi:
         new_name = generate_random_string()
         relation_count = IdpDataSourceRelation.objects.filter(idp=wecom_idp).count()
         resp = api_client.patch(
-            reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}),
+            reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
             data={"name": new_name, "data_source_match_rules": []},
         )
         assert resp.status_code == status.HTTP_204_NO_CONTENT
@@ -466,14 +467,17 @@ class TestIdpUpdateApi:
     #         creator=bk_user.username,
     #         updater=bk_user.username,
     #     )
-    #     resp = api_client.patch(reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}), data={"name": new_name})
+    #     resp = api_client.patch(
+    #         reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}),
+    #         data={"name": new_name},
+    #     )
     #     assert resp.status_code == status.HTTP_400_BAD_REQUEST
     #     assert "同名认证源已存在" in resp.data["message"]
 
 
 class TestIdpRetrieveApi:
     def test_retrieve(self, api_client, wecom_idp):
-        resp = api_client.get(reverse("idp.retrieve_update", kwargs={"id": wecom_idp.id}))
+        resp = api_client.get(reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}))
         assert resp.data["id"] == wecom_idp.id
         assert resp.data["name"] == wecom_idp.name
         assert resp.data["status"] == wecom_idp.status
@@ -482,6 +486,55 @@ class TestIdpRetrieveApi:
         assert resp.data["plugin_config"] == wecom_idp.plugin_config
         assert resp.data["data_source_match_rules"] == get_idp_match_rules(wecom_idp)
         assert resp.data["callback_uri"] == wecom_idp.callback_uri
+
+
+class TestIdpDestroyApi:
+    def test_destroy_rejects_idp_with_data_source_relation(self, api_client, wecom_idp):
+        data_source_ids = list(
+            IdpDataSourceRelation.objects.filter(idp=wecom_idp).values_list("data_source_id", flat=True)
+        )
+        assert IdpSensitiveInfo.objects.filter(idp=wecom_idp).exists()
+
+        resp = api_client.delete(reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}))
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "该认证源已关联数据源，不允许删除" in resp.data["message"]
+        assert Idp.objects.filter(id=wecom_idp.id).exists()
+        assert IdpSensitiveInfo.objects.filter(idp_id=wecom_idp.id).exists()
+        assert IdpDataSourceRelation.objects.filter(idp_id=wecom_idp.id).exists()
+        leftover_ds_ids = set(DataSource.objects.filter(id__in=data_source_ids).values_list("id", flat=True))
+        assert leftover_ds_ids == set(data_source_ids)
+
+    def test_destroy_orphan_idp(self, api_client, wecom_idp):
+        IdpDataSourceRelation.objects.filter(idp=wecom_idp).delete()
+
+        resp = api_client.delete(reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}))
+
+        assert resp.status_code == status.HTTP_204_NO_CONTENT
+        assert not Idp.objects.filter(id=wecom_idp.id).exists()
+        assert not IdpSensitiveInfo.objects.filter(idp_id=wecom_idp.id).exists()
+
+    def test_destroy_rejects_builtin_management_idp(self, api_client, bare_local_data_source):
+        builtin_data_source = DataSource.objects.create(
+            name="内置管理数据源",
+            owner_tenant_id=bare_local_data_source.owner_tenant_id,
+            type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
+            plugin=bare_local_data_source.plugin,
+            plugin_config=bare_local_data_source.get_plugin_cfg(),
+        )
+        builtin_idp = Idp.objects.create(
+            name="内置管理认证源",
+            owner_tenant_id=bare_local_data_source.owner_tenant_id,
+            plugin_id=BuiltinIdpPluginEnum.LOCAL,
+            plugin_config=LocalIdpPluginConfig(data_source_ids=[builtin_data_source.id]),
+        )
+        IdpDataSourceRelationHandler.set_builtin_management_relation(builtin_idp, builtin_data_source)
+
+        resp = api_client.delete(reverse("idp.retrieve_update_destroy", kwargs={"id": builtin_idp.id}))
+
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "该认证源已关联数据源，不允许删除" in resp.data["message"]
+        assert Idp.objects.filter(id=builtin_idp.id).exists()
 
 
 class TestIdpStatusUpdateApi:
@@ -551,7 +604,7 @@ class TestLocalIdpApi:
         idp_id = resp.data["id"]
 
         payload["data_source_match_rules"] = payload["data_source_match_rules"][:1]
-        resp = api_client.put(reverse("idp.retrieve_update", kwargs={"id": idp_id}), data=payload)
+        resp = api_client.put(reverse("idp.retrieve_update_destroy", kwargs={"id": idp_id}), data=payload)
         assert resp.status_code == status.HTTP_204_NO_CONTENT
 
         bare_local_data_source.refresh_from_db()

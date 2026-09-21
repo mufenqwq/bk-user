@@ -16,6 +16,7 @@
 # to the current version of the project delivered to anyone in the future.
 
 from django.db import transaction
+from django.utils.translation import gettext_lazy as _
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -24,7 +25,7 @@ from rest_framework.response import Response
 from bkuser.apis.web.mixins import CurrentUserTenantMixin
 from bkuser.apps.idp.constants import IdpStatus
 from bkuser.apps.idp.data_models import DataSourceMatchRule
-from bkuser.apps.idp.models import Idp, IdpPlugin, IdpSensitiveInfo
+from bkuser.apps.idp.models import Idp, IdpDataSourceRelation, IdpPlugin, IdpSensitiveInfo
 from bkuser.apps.permission.constants import PermAction
 from bkuser.apps.permission.permissions import perm_class
 from bkuser.biz.auditor import IdpAuditor
@@ -143,7 +144,7 @@ class IdpListCreateApi(CurrentUserTenantMixin, generics.ListCreateAPIView):
         return Response(IdpCreateOutputSLZ(instance=idp).data, status=status.HTTP_201_CREATED)
 
 
-class IdpRetrieveUpdateApi(CurrentUserTenantMixin, generics.RetrieveUpdateAPIView):
+class IdpRetrieveUpdateDestroyApi(CurrentUserTenantMixin, generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, perm_class(PermAction.MANAGE_TENANT)]
 
     serializer_class = IdpRetrieveOutputSLZ
@@ -221,6 +222,29 @@ class IdpRetrieveUpdateApi(CurrentUserTenantMixin, generics.RetrieveUpdateAPIVie
         # 【审计】将审计记录保存至数据库
         auditor.record_update(idp)
 
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @swagger_auto_schema(
+        tags=["idp"],
+        operation_description="删除认证源",
+        responses={status.HTTP_204_NO_CONTENT: ""},
+    )
+    def delete(self, request, *args, **kwargs):
+        idp = self.get_object()
+        current_tenant_id = self.get_current_tenant_id()
+        if IdpDataSourceRelation.objects.filter(idp=idp).exists():
+            raise error_codes.IDP_DELETE_FAILED.f(_("该认证源已关联数据源，不允许删除"))
+
+        # 【审计】创建认证源审计对象，并记录变更前数据
+        auditor = IdpAuditor(request.user.username, current_tenant_id)
+        auditor.pre_record_data_before(idp)
+
+        with transaction.atomic():
+            IdpSensitiveInfo.objects.filter(idp=idp).delete()
+            idp.delete()
+
+        # 【审计】将审计记录保存至数据库
+        auditor.record_delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
