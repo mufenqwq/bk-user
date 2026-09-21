@@ -235,6 +235,7 @@ class IdpRetrieveUpdateDestroyApi(CurrentUserTenantMixin, generics.RetrieveUpdat
         responses={status.HTTP_204_NO_CONTENT: ""},
     )
     def delete(self, request, *args, **kwargs):
+        # Note: 当前产品界面未提供删除认证源的功能
         idp = self.get_object()
         current_tenant_id = self.get_current_tenant_id()
         if IdpDataSourceRelation.objects.filter(idp=idp).exists():
