@@ -524,12 +524,11 @@ class TestLocalIdpApi:
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
         assert f"{BuiltinIdpPluginEnum.LOCAL} 类型的认证源已存在" in resp.data["message"]
 
-    def test_create_ignores_request_plugin_config(self, api_client, random_tenant, bare_local_data_source):
-        """本地认证源的 data_source_ids 由生效范围同步，请求体传入的插件配置不生效"""
+    def test_create_rejects_request_plugin_config(self, api_client, random_tenant, bare_local_data_source):
         payload = self._build_payload([bare_local_data_source], plugin_config={"data_source_ids": [99999999]})
         resp = api_client.post(reverse("idp.list_create"), data=payload)
-        assert resp.status_code == status.HTTP_201_CREATED
-        assert Idp.objects.get(id=resp.data["id"]).plugin_config["data_source_ids"] == [bare_local_data_source.id]
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert "本地认证源无插件配置" in resp.data["message"]
 
     def test_update_shrink_scope_preserves_data_source_password_config(
         self, api_client, random_tenant, bare_local_data_source, local_ds_plugin, local_ds_plugin_cfg
