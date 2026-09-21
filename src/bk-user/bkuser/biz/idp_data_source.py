@@ -95,7 +95,7 @@ class IdpDataSourceRelationHandler:
     def get_real_idp_ids_with_orphan(owner_tenant_id: str) -> List[str]:
         """获取租户下关联实名数据源的 IDP 以及孤儿 IDP（无任何关系记录）的 ID 列表。
 
-        数据源被重置但保留登录源时，IDP 会变成无关系的孤儿态，仍需返回以便管理员后续重新配置。
+        与 IDP 关联的所有数据源被删除后，IDP 会变成无关系的孤儿态，仍需返回以便管理员后续重新配置。
         由于 IDP 不会同时关联多种类型的数据源，排除仅关联非实名数据源的 IDP 即可。
         """
         non_real_idp_ids = (
@@ -111,7 +111,7 @@ class IdpDataSourceRelationHandler:
 
     @staticmethod
     def get_real_match_rules(idp: Idp) -> List[DataSourceMatchRule]:
-        """返回 idp 全部 REAL 关系（生效范围），供详情回显"""
+        """返回 IDP 全部 REAL 关系（生效范围），供详情回显"""
         return [
             IdpDataSourceRelationHandler._build_match_rule(rel)
             for rel in IdpDataSourceRelation.objects.filter(
@@ -125,11 +125,11 @@ class IdpDataSourceRelationHandler:
 
         返回 True（拒绝创建）的两种情形：
         1) 同插件类型的 IDP 已关联实名数据源；
-        2) 同插件类型存在孤儿 IDP（无任何关系记录，通常是实名数据源被重置后遗留的），
+        2) 同插件类型存在孤儿 IDP（无任何关系记录，通常是实名数据源被删除后遗留的），
            仍占据插件槽位，需走更新流程。
         仅关联虚拟数据源的 IDP 不受此约束。
 
-        注意：孤儿 IDP 几乎都源自实名数据源重置（虚拟数据源和内置管理数据源不会产生孤儿），
+        注意：孤儿 IDP 几乎都源自实名数据源删除（虚拟数据源和内置管理数据源不会产生孤儿），
         因此对孤儿一律拦截，避免重复创建同插件类型的 IDP。
         """
         # 查询同插件类型的 IDP，可能包括已关联实名数据源的、孤儿 IDP、关联内置管理数据源的
@@ -178,10 +178,10 @@ class IdpDataSourceRelationHandler:
     @staticmethod
     @transaction.atomic()
     def set_real_relations_from_match_rules(idp: Idp, match_rules: List[DataSourceMatchRule]) -> None:
-        """按显式生效范围 diff 刷新 idp 的实名数据源关系（新增/更新/删除）。
+        """按显式生效范围 diff 刷新 IDP 的实名数据源关系（新增/更新/删除）。
 
         - 只处理 REAL 数据源关系，虚拟/内置管理关系不受影响
-        - match_rules 为空表示清空生效范围（idp 变孤儿）
+        - match_rules 为空表示清空生效范围（IDP 变孤儿）
         - 联邦源兼容全部 REAL 源，本地账密只兼容 plugin_id=local 且已启用密码功能的源
         """
         # 构建目标映射：data_source_id -> field_compare_rules
