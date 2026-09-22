@@ -509,7 +509,8 @@ class TestIdpRetrieveApi:
 
 
 class TestIdpDestroyApi:
-    def test_destroy_rejects_idp_with_data_source_relation(self, api_client, wecom_idp):
+    def test_destroy_idp_with_data_source_relation(self, api_client, wecom_idp):
+        """删除认证源不受数据源关系约束，关系记录随之清理，数据源本身不受影响"""
         data_source_ids = list(
             IdpDataSourceRelation.objects.filter(idp=wecom_idp).values_list("data_source_id", flat=True)
         )
@@ -517,11 +518,10 @@ class TestIdpDestroyApi:
 
         resp = api_client.delete(reverse("idp.retrieve_update_destroy", kwargs={"id": wecom_idp.id}))
 
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "该认证源已关联数据源，不允许删除" in resp.data["message"]
-        assert Idp.objects.filter(id=wecom_idp.id).exists()
-        assert IdpSensitiveInfo.objects.filter(idp_id=wecom_idp.id).exists()
-        assert IdpDataSourceRelation.objects.filter(idp_id=wecom_idp.id).exists()
+        assert resp.status_code == status.HTTP_204_NO_CONTENT
+        assert not Idp.objects.filter(id=wecom_idp.id).exists()
+        assert not IdpSensitiveInfo.objects.filter(idp_id=wecom_idp.id).exists()
+        assert not IdpDataSourceRelation.objects.filter(idp_id=wecom_idp.id).exists()
         leftover_ds_ids = set(DataSource.objects.filter(id__in=data_source_ids).values_list("id", flat=True))
         assert leftover_ds_ids == set(data_source_ids)
 

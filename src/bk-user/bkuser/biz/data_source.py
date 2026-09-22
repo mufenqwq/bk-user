@@ -32,6 +32,7 @@ from bkuser.apps.tenant.models import (
     TenantUserIDGenerateConfig,
     TenantUserIDRecord,
 )
+from bkuser.biz.idp_data_source import IdpDataSourceRelationHandler
 
 
 class DataSourceHandler:
@@ -52,19 +53,21 @@ class DataSourceHandler:
         TenantDepartmentIDRecord.objects.filter(data_source=data_source).delete()
 
         # ======== 删除数据源相关模型数据 ========
-        # 1. 删除部门 - 用户关系
+        # 1. 删除 IDP - 数据源关系
+        IdpDataSourceRelationHandler.remove_data_source_relations(data_source=data_source)
+        # 2. 删除部门 - 用户关系
         DataSourceDepartmentUserRelation.objects.filter(data_source=data_source).delete()
-        # 2. 删除部门 - 部门关系
+        # 3. 删除部门 - 部门关系
         DataSourceDepartmentRelation.objects.filter(data_source=data_source).delete()
-        # 3. 删除数据源部门
+        # 4. 删除数据源部门
         DataSourceDepartment.objects.filter(data_source=data_source).delete()
-        # 4. 删除 Leader - 用户关系
+        # 5. 删除 Leader - 用户关系
         DataSourceUserLeaderRelation.objects.filter(data_source=data_source).delete()
-        # 5. 删除数据源用户（注：密码 & 废弃密码记录会级联删除）
+        # 6. 删除数据源用户（注：密码 & 废弃密码记录会级联删除）
         DataSourceUser.objects.filter(data_source=data_source).delete()
-        # 6. 删除 MPTT 树
+        # 7. 删除 MPTT 树
         DepartmentRelationMPTTTree.objects.filter(data_source=data_source).delete()
-        # 7. 删除数据源敏感信息
+        # 8. 删除数据源敏感信息
         DataSourceSensitiveInfo.objects.filter(data_source=data_source).delete()
-        # 8. 删除数据源
+        # 9. 删除数据源
         data_source.delete()

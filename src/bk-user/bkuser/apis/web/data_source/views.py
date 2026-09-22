@@ -75,7 +75,6 @@ from bkuser.common.response import convert_workbook_to_response
 from bkuser.common.views import ExcludePatchAPIViewMixin
 from bkuser.plugins.base import get_default_plugin_cfg, get_plugin_cfg_schema_map, get_plugin_cls
 from bkuser.plugins.constants import DataSourcePluginEnum
-from bkuser.plugins.local.models import LocalDataSourcePluginConfig
 
 from .schema import get_data_source_plugin_cfg_json_schema
 
@@ -255,7 +254,7 @@ class DataSourceRetrieveUpdateDestroyApi(
         # 本地认证源依赖数据源的密码功能，仍被关联时不允许关闭
         plugin_config = data["plugin_config"]
         if (
-            isinstance(plugin_config, LocalDataSourcePluginConfig)
+            data_source.is_local
             and not plugin_config.enable_password
             and IdpDataSourceRelationHandler.has_local_idp_relation(data_source)
         ):
@@ -295,8 +294,6 @@ class DataSourceRetrieveUpdateDestroyApi(
         auditor.pre_record_data_before(data_source)
 
         with transaction.atomic():
-            # 删除数据源与 IDP 的关联关系
-            IdpDataSourceRelationHandler.remove_data_source_relations(data_source)
             # 删除数据源 & 关联资源数据
             DataSourceHandler.delete_data_source_and_related_resources(data_source)
 

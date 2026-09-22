@@ -14,7 +14,7 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-from typing import List
+from typing import Any, Dict, List, Set
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -159,68 +159,81 @@ class IdpDataSourceRelationHandler:
         idp.set_plugin_cfg(LocalIdpPluginConfig(data_source_ids=data_source_ids))
 
     @staticmethod
-    @transaction.atomic()
-    def set_real_relations_from_match_rules(idp: Idp, match_rules: List[DataSourceMatchRule]) -> None:
-        """按显式生效范围 diff 刷新 IDP 的实名数据源关系（新增/更新/删除）。
+    def _validate_real_data_sources(idp: Idp, data_source_ids: Set[int]) -> None:
+        """校验目标数据源均为当前租户下的实名数据源，且与 IDP 插件兼容。
 
-        - 只处理 REAL 数据源关系，虚拟/内置管理关系不受影响
-        - match_rules 为空表示清空生效范围（IDP 变孤儿）
-        - 联邦源兼容全部 REAL 源，本地账密只兼容 plugin_id=local 且已启用密码功能的源
+        联邦源兼容全部 REAL 源，本地账密只兼容 plugin_id=local 且已启用密码功能的源。
         """
-        # 构建目标映射：data_source_id -> field_compare_rules
-        target = {rule.data_source_id: [r.model_dump() for r in rule.field_compare_rules] for rule in match_rules}
-        target_ids = set(target.keys())
+        if not data_source_ids:
+            return
 
-        # 校验目标数据源均属当前租户、为 REAL 类型
-        if target_ids:
-            valid_qs = DataSource.objects.filter(
-                id__in=target_ids, owner_tenant_id=idp.owner_tenant_id, type=DataSourceTypeEnum.REAL
-            )
-            if idp.plugin_id == BuiltinIdpPluginEnum.LOCAL:
-                valid_qs = valid_qs.filter(plugin_id=DataSourcePluginEnum.LOCAL)
-            valid_data_sources = list(valid_qs)
-            valid_ids = {data_source.id for data_source in valid_data_sources}
-            if target_ids - valid_ids:
-                raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("存在不兼容或不属于当前租户的实名数据源"))
+        is_local_idp = idp.plugin_id == BuiltinIdpPluginEnum.LOCAL
 
-            # 本地认证源依赖数据源的密码功能，未启用密码的数据源不允许关联
-            if idp.plugin_id == BuiltinIdpPluginEnum.LOCAL and any(
-                not data_source.get_plugin_cfg().enable_password for data_source in valid_data_sources
-            ):
-                raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("本地认证源仅允许关联已启用密码功能的数据源"))
+        queryset = DataSource.objects.filter(
+            id__in=data_source_ids, owner_tenant_id=idp.owner_tenant_id, type=DataSourceTypeEnum.REAL
+        )
+        if is_local_idp:
+            queryset = queryset.filter(plugin_id=DataSourcePluginEnum.LOCAL)
 
-        # 现有 REAL 关系: {data_source_id: relation}（target 为空表示清空全部 REAL 关系）
+        data_sources = list(queryset)
+        if data_source_ids - {data_source.id for data_source in data_sources}:
+            raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("存在不兼容或不属于当前租户的实名数据源"))
+
+        # 本地认证源依赖数据源的密码功能，未启用密码的数据源不允许关联
+        if is_local_idp and any(not data_source.get_plugin_cfg().enable_password for data_source in data_sources):
+            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("本地认证源仅允许关联已启用密码功能的数据源"))
+
+    @staticmethod
+    def _sync_real_relations(idp: Idp, target: Dict[int, List[Dict[str, Any]]]) -> None:
+        """按目标映射（data_source_id -> field_compare_rules）diff 刷新 REAL 关系记录。
+
+        target 为空表示清空 IDP 的全部 REAL 关系。
+        """
         existing = {
-            rel.data_source_id: rel
-            for rel in IdpDataSourceRelation.objects.filter(idp=idp, data_source__type=DataSourceTypeEnum.REAL)
+            relation.data_source_id: relation
+            for relation in IdpDataSourceRelation.objects.filter(idp=idp, data_source__type=DataSourceTypeEnum.REAL)
         }
-        existing_ids = set(existing.keys())
 
         # 删：现有有，目标无
-        if to_delete := existing_ids - target_ids:
+        if to_delete := existing.keys() - target.keys():
             IdpDataSourceRelation.objects.filter(idp=idp, data_source_id__in=to_delete).delete()
 
         # 增：现有无，目标有
-        if to_create := target_ids - existing_ids:
+        if to_create := target.keys() - existing.keys():
             IdpDataSourceRelation.objects.bulk_create(
                 [
                     IdpDataSourceRelation(
                         idp=idp,
-                        data_source_id=ds_id,
+                        data_source_id=data_source_id,
                         idp_owner_tenant_id=idp.owner_tenant_id,
-                        field_compare_rules=target[ds_id],
+                        field_compare_rules=target[data_source_id],
                     )
-                    for ds_id in to_create
+                    for data_source_id in to_create
                 ]
             )
 
         # 改：两边都有但规则不同
-        for ds_id in existing_ids & target_ids:
-            rel = existing[ds_id]
-            if rel.field_compare_rules != target[ds_id]:
-                rel.field_compare_rules = target[ds_id]
-                rel.save(update_fields=["field_compare_rules", "updated_at"])
+        for data_source_id in existing.keys() & target.keys():
+            relation = existing[data_source_id]
+            if relation.field_compare_rules != target[data_source_id]:
+                relation.field_compare_rules = target[data_source_id]
+                relation.save(update_fields=["field_compare_rules", "updated_at"])
 
+    @staticmethod
+    @transaction.atomic()
+    def set_real_relations_from_match_rules(idp: Idp, match_rules: List[DataSourceMatchRule]) -> None:
+        """按显式生效范围刷新 IDP 的实名数据源关系（新增/更新/删除）。
+
+        - 只处理 REAL 数据源关系，虚拟/内置管理关系不受影响
+        - match_rules 为空表示清空生效范围（IDP 变孤儿）
+        """
+        target = {
+            rule.data_source_id: [compare_rule.model_dump() for compare_rule in rule.field_compare_rules]
+            for rule in match_rules
+        }
+
+        IdpDataSourceRelationHandler._validate_real_data_sources(idp, set(target.keys()))
+        IdpDataSourceRelationHandler._sync_real_relations(idp, target)
         IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
 
     @staticmethod

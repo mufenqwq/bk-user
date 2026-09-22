@@ -16,7 +16,6 @@
 # to the current version of the project delivered to anyone in the future.
 
 from django.db import transaction
-from django.utils.translation import gettext_lazy as _
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
@@ -25,7 +24,7 @@ from rest_framework.response import Response
 from bkuser.apis.web.mixins import CurrentUserTenantMixin
 from bkuser.apps.idp.constants import IdpStatus
 from bkuser.apps.idp.data_models import DataSourceMatchRule
-from bkuser.apps.idp.models import Idp, IdpDataSourceRelation, IdpPlugin, IdpSensitiveInfo
+from bkuser.apps.idp.models import Idp, IdpPlugin, IdpSensitiveInfo
 from bkuser.apps.permission.constants import PermAction
 from bkuser.apps.permission.permissions import perm_class
 from bkuser.biz.auditor import IdpAuditor
@@ -236,8 +235,6 @@ class IdpRetrieveUpdateDestroyApi(CurrentUserTenantMixin, generics.RetrieveUpdat
         # Note: 当前产品界面未提供删除认证源的功能
         idp = self.get_object()
         current_tenant_id = self.get_current_tenant_id()
-        if IdpDataSourceRelation.objects.filter(idp=idp).exists():
-            raise error_codes.IDP_DELETE_FAILED.f(_("该认证源已关联数据源，不允许删除"))
 
         # 【审计】创建认证源审计对象，并记录变更前数据
         auditor = IdpAuditor(request.user.username, current_tenant_id)
@@ -262,10 +259,9 @@ class IdpStatusUpdateApi(CurrentUserTenantMixin, ExcludePatchAPIViewMixin, gener
 
     def get_queryset(self):
         # Note: 【防御性】当前产品页面未提供仅启停的功能
-        #  无效数据源对应的认证源，需要经过修改后才可以启用
         return Idp.objects.filter(
             owner_tenant_id=self.get_current_tenant_id(),
-            id__in=IdpDataSourceRelationHandler.get_real_idp_ids(self.get_current_tenant_id()),
+            id__in=IdpDataSourceRelationHandler.get_real_idp_ids_with_orphan(self.get_current_tenant_id()),
         )
 
     @swagger_auto_schema(
