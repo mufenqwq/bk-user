@@ -44,34 +44,6 @@ class IdpDataSourceRelationHandler:
         )
 
     @staticmethod
-    def get_relation_data_source_ids(
-        idp: Idp,
-        data_source_type: str | None = None,
-        data_source_plugin_id: str | None = None,
-    ) -> List[int]:
-        """获取 IDP 关联的数据源 ID 列表，按关系创建时间排序，保证主数据源排在最前。
-
-        支持按数据源类型和插件 ID 过滤；返回顺序与关系创建顺序一致，
-        用于本地登录插件配置等需要稳定排序的场景。
-        """
-        relation_ids = list(
-            IdpDataSourceRelation.objects.filter(idp=idp)
-            .order_by("created_at", "id")
-            .values_list("data_source_id", flat=True)
-        )
-        if not relation_ids:
-            return []
-
-        data_sources = DataSource.objects.filter(id__in=relation_ids)
-        if data_source_type:
-            data_sources = data_sources.filter(type=data_source_type)
-        if data_source_plugin_id:
-            data_sources = data_sources.filter(plugin_id=data_source_plugin_id)
-
-        data_source_ids = set(data_sources.values_list("id", flat=True))
-        return [data_source_id for data_source_id in relation_ids if data_source_id in data_source_ids]
-
-    @staticmethod
     def get_real_idp_ids(
         owner_tenant_id: str, idp_plugin_id: str | None = None, data_source_plugin_id: str | None = None
     ) -> List[str]:
@@ -162,6 +134,11 @@ class IdpDataSourceRelationHandler:
         ).exists()
 
     @staticmethod
+    def _get_relation_data_source_type(idp: Idp) -> str | None:
+        """获取 IDP 当前关联的数据源类型，无任何关系时返回 None。"""
+        return IdpDataSourceRelation.objects.filter(idp=idp).values_list("data_source__type", flat=True).first()
+
+    @staticmethod
     def _sync_local_plugin_config(idp: Idp) -> None:
         """将 IDP 当前关联的数据源 ID 同步到本地登录插件配置中。
 
@@ -171,9 +148,15 @@ class IdpDataSourceRelationHandler:
         if idp.plugin_id != BuiltinIdpPluginEnum.LOCAL:
             return
 
-        idp.set_plugin_cfg(
-            LocalIdpPluginConfig(data_source_ids=IdpDataSourceRelationHandler.get_relation_data_source_ids(idp))
-        )
+        data_source_ids: List[int] = []
+        if data_source_type := IdpDataSourceRelationHandler._get_relation_data_source_type(idp):
+            data_source_ids = list(
+                IdpDataSourceRelation.objects.filter(idp=idp, data_source__type=data_source_type).values_list(
+                    "data_source_id", flat=True
+                )
+            )
+
+        idp.set_plugin_cfg(LocalIdpPluginConfig(data_source_ids=data_source_ids))
 
     @staticmethod
     @transaction.atomic()
@@ -247,22 +230,25 @@ class IdpDataSourceRelationHandler:
 
         没有剩余关系的认证源会保留为孤儿态。
         """
-        local_idps = list(
-            Idp.objects.filter(
-                plugin_id=BuiltinIdpPluginEnum.LOCAL,
-                data_source_relations__data_source=data_source,
-            ).distinct()
+        relation = (
+            IdpDataSourceRelation.objects.filter(data_source=data_source, idp__plugin_id=BuiltinIdpPluginEnum.LOCAL)
+            .select_related("idp")
+            .first()
         )
-
         IdpDataSourceRelation.objects.filter(data_source=data_source).delete()
 
-        for idp in local_idps:
-            IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
+        if relation:
+            IdpDataSourceRelationHandler._sync_local_plugin_config(relation.idp)
 
     @staticmethod
     @transaction.atomic()
     def set_builtin_management_relation(idp: Idp, data_source: DataSource) -> None:
         """为内置管理登录源设置唯一的数据源关系（先清除再创建），用于租户初始化流程"""
+        if IdpDataSourceRelationHandler._get_relation_data_source_type(idp) == DataSourceTypeEnum.REAL:
+            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(
+                _("已关联实名数据源的登录源不允许关联内置管理数据源")
+            )
+
         IdpDataSourceRelation.objects.filter(
             idp=idp,
             data_source__type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,

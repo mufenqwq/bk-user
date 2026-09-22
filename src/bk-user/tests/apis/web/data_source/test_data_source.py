@@ -37,6 +37,8 @@ from bkuser.apps.sync.constants import SyncTaskStatus, SyncTaskTrigger
 from bkuser.apps.sync.models import DataSourceSyncTask
 from bkuser.biz.idp_data_source import IdpDataSourceRelationHandler
 from bkuser.common.error_codes import error_codes
+from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
+from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
 from bkuser.plugins.constants import DataSourcePluginEnum
 from bkuser.plugins.local.constants import PasswordGenerateMethod
 from bkuser.utils.std_error import APIError
@@ -607,6 +609,50 @@ class TestIdpDataSourceRelationHandler:
 
         assert exc_info.value.code == error_codes.DATA_SOURCE_NOT_EXIST.code
         assert "存在不兼容或不属于当前租户的实名数据源" in exc_info.value.message
+
+    @pytest.fixture
+    def builtin_management_data_source(self, data_source) -> DataSource:
+        return DataSource.objects.create(
+            name="内置管理数据源",
+            owner_tenant_id=data_source.owner_tenant_id,
+            type=DataSourceTypeEnum.BUILTIN_MANAGEMENT,
+            plugin=data_source.plugin,
+            plugin_config=data_source.get_plugin_cfg(),
+        )
+
+    @pytest.fixture
+    def builtin_management_idp(self, builtin_management_data_source) -> Idp:
+        idp = Idp.objects.create(
+            name="内置管理登录源",
+            owner_tenant_id=builtin_management_data_source.owner_tenant_id,
+            plugin_id=BuiltinIdpPluginEnum.LOCAL,
+            plugin_config=LocalIdpPluginConfig(data_source_ids=[builtin_management_data_source.id]),
+        )
+        IdpDataSourceRelationHandler.set_builtin_management_relation(idp, builtin_management_data_source)
+        return idp
+
+    def test_set_builtin_management_relation_rejects_real_scope_idp(
+        self, data_source, local_idp, builtin_management_data_source
+    ):
+        """已关联实名数据源的本地登录源不允许再关联内置管理数据源"""
+        with pytest.raises(APIError) as exc_info:
+            IdpDataSourceRelationHandler.set_builtin_management_relation(local_idp, builtin_management_data_source)
+
+        assert exc_info.value.code == error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.code
+        local_idp.refresh_from_db()
+        assert local_idp.plugin_config["data_source_ids"] == [data_source.id]
+        assert not IdpDataSourceRelation.objects.filter(
+            idp=local_idp, data_source=builtin_management_data_source
+        ).exists()
+
+    def test_set_builtin_management_relation_syncs_only_builtin_scope(
+        self, data_source, builtin_management_data_source, builtin_management_idp
+    ):
+        """内置管理登录源的插件配置只包含内置管理数据源，不受租户下实名数据源影响"""
+        assert builtin_management_idp.plugin_config["data_source_ids"] == [builtin_management_data_source.id]
+        assert set(
+            IdpDataSourceRelation.objects.filter(idp=builtin_management_idp).values_list("data_source_id", flat=True)
+        ) == {builtin_management_data_source.id}
 
 
 class TestDataSourceRetrieveApi:
