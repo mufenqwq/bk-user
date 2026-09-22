@@ -222,7 +222,12 @@ class TenantDepartmentUserListApi(OpenWebApiCommonMixin, generics.ListAPIView):
         tenant_users = self.paginate_queryset(self.get_queryset())
         display_name_map = TenantUserDisplayNameHandler.batch_generate_tenant_user_display_name(tenant_users)
         slz = TenantDepartmentUserListOutputSLZ(
-            tenant_users, many=True, context={"display_name_map": display_name_map}
+            tenant_users,
+            many=True,
+            context={
+                "display_name_map": display_name_map,
+                "org_ids_map": TenantOrgPathHandler.get_user_organization_ids_map(tenant_users),
+            },
         )
         return self.get_paginated_response(slz.data)
 

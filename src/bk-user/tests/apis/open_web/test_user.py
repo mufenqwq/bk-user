@@ -18,12 +18,23 @@ from unittest import mock
 
 import pytest
 from bkuser.apps.tenant.constants import TenantUserStatus
-from bkuser.apps.tenant.models import TenantUser, TenantUserDisplayNameExpressionConfig
+from bkuser.apps.tenant.models import TenantDepartment, TenantUser, TenantUserDisplayNameExpressionConfig
 from django.conf import settings
 from django.urls import reverse
 from rest_framework import status
 
 pytestmark = pytest.mark.django_db
+
+
+def _dept_ids(tenant, *codes: str) -> list[int]:
+    return [
+        TenantDepartment.objects.get(
+            tenant=tenant,
+            data_source__owner_tenant_id=tenant.id,
+            data_source_department__code=code,
+        ).id
+        for code in codes
+    ]
 
 
 @pytest.mark.usefixtures("_init_tenant_users_depts")
@@ -308,6 +319,19 @@ class TestTenantUserSearchApi:
         assert {t["bk_username"] for t in resp.data} == {collab_zhangsan.id}
         assert {t["display_name"] for t in resp.data} == {"zhangsan(张三)"}
 
+    def test_organization_ids(self, api_client, random_tenant):
+        """白十二挂在小组 BAA，返回从根到直属部门的租户部门 ID"""
+        resp = api_client.get(
+            reverse("open_web.tenant_user.search"),
+            data={"keyword": "白十", "owner_tenant_id": random_tenant.id},
+        )
+
+        assert resp.status_code == status.HTTP_200_OK
+        assert len(resp.data) == 1
+        assert resp.data[0]["organization_ids"] == _dept_ids(
+            random_tenant, "company", "dept_b", "center_ba", "group_baa"
+        )
+
     def test_with_not_match(self, api_client):
         resp = api_client.get(reverse("open_web.tenant_user.search"), data={"keyword": "chen"})
         assert resp.status_code == status.HTTP_200_OK
@@ -523,6 +547,22 @@ class TestTenantUserLookupApi:
             "公司/部门A/中心AA",
             "公司/部门A",
         }
+
+    def test_organization_ids(self, api_client, random_tenant):
+        """王五属于部门 A 和部门 B，共享的「公司」只出现一次"""
+        resp = api_client.get(
+            reverse("open_web.tenant_user.lookup"),
+            data={
+                "lookups": "wangwu",
+                "lookup_fields": "login_name",
+                "owner_tenant_id": random_tenant.id,
+                "data_source_type": "real",
+            },
+        )
+
+        assert resp.status_code == status.HTTP_200_OK
+        assert len(resp.data) == 1
+        assert resp.data[0]["organization_ids"] == _dept_ids(random_tenant, "company", "dept_a", "dept_b")
 
     def test_with_not_match(self, api_client):
         resp = api_client.get(

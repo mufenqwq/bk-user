@@ -179,6 +179,7 @@ class TenantUserSearchApi(OpenWebApiCommonMixin, generics.ListAPIView):
         context: Dict[str, Any] = {
             "with_organization_paths": with_organization_paths,
             "org_path_map": {},
+            "org_ids_map": TenantOrgPathHandler.get_user_organization_ids_map(queryset),
             "display_name_map": TenantUserDisplayNameHandler.batch_generate_tenant_user_display_name(queryset),
             "login_name_map": TenantUserHandler.batch_get_login_name(queryset),
         }
@@ -249,6 +250,7 @@ class TenantUserLookupApi(OpenWebApiCommonMixin, generics.ListAPIView):
         context: Dict[str, Any] = {
             "with_organization_paths": with_organization_paths,
             "org_path_map": {},
+            "org_ids_map": TenantOrgPathHandler.get_user_organization_ids_map(queryset),
             "display_name_map": TenantUserDisplayNameHandler.batch_generate_tenant_user_display_name(queryset),
             "login_name_map": TenantUserHandler.batch_get_login_name(queryset),
         }
@@ -257,6 +259,7 @@ class TenantUserLookupApi(OpenWebApiCommonMixin, generics.ListAPIView):
         if with_organization_paths:
             data_source_user_ids = [tenant_user.data_source_user_id for tenant_user in queryset]
             context["org_path_map"] = TenantOrgPathHandler.get_user_organization_paths_map(data_source_user_ids)
+
         return Response(TenantUserLookupOutputSLZ(queryset, context=context, many=True).data)
 
 

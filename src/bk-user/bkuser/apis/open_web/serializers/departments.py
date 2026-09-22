@@ -52,7 +52,7 @@ class TenantDepartmentSearchOutputSLZ(serializers.Serializer):
         return self.context["has_user_map"][obj.data_source_department_id]
 
     def get_ancestor_ids(self, obj: TenantDepartment) -> List[int]:
-        return self.context["ancestor_ids_map"].get(obj.id, [])
+        return self.context["ancestor_ids_map"].get(obj.id)
 
 
 class TenantDepartmentChildrenListInputSLZ(serializers.Serializer):
@@ -82,7 +82,7 @@ class TenantDepartmentChildrenListOutputSLZ(serializers.Serializer):
         return self.context["has_user_map"][obj.data_source_department_id]
 
     def get_ancestor_ids(self, obj: TenantDepartment) -> List[int]:
-        return self.context["ancestor_ids_map"].get(obj.id, [])
+        return self.context["ancestor_ids_map"].get(obj.id)
 
 
 class TenantDepartmentUserListInputSLZ(serializers.Serializer):
@@ -102,9 +102,13 @@ class TenantDepartmentUserListOutputSLZ(serializers.Serializer):
     bk_username = serializers.CharField(help_text="蓝鲸用户唯一标识", source="id")
     login_name = serializers.CharField(help_text="企业内用户唯一标识", source="data_source_user.username")
     display_name = serializers.SerializerMethodField(help_text="用户展示名称")
+    organization_ids = serializers.SerializerMethodField(help_text="用户所属部门 ID 列表")
 
     def get_display_name(self, obj: TenantUser) -> str:
         return self.context["display_name_map"][obj.id]
+
+    def get_organization_ids(self, obj: TenantUser) -> List[str]:
+        return self.context["org_ids_map"][obj.id]
 
 
 class TenantDepartmentLookupInputSLZ(serializers.Serializer):
@@ -125,4 +129,4 @@ class TenantDepartmentLookupOutputSLZ(serializers.Serializer):
         return self.context["org_path_map"][obj.data_source_department_id]
 
     def get_ancestor_ids(self, obj: TenantDepartment) -> List[int]:
-        return self.context["ancestor_ids_map"].get(obj.id, [])
+        return self.context["ancestor_ids_map"].get(obj.id)

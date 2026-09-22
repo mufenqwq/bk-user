@@ -31,7 +31,7 @@ from bkuser.apps.data_source.models import (
     DataSourceUserDeprecatedPasswordRecord,
     LocalDataSourceIdentityInfo,
 )
-from bkuser.apps.tenant.models import TenantDepartment, TenantDepartmentIDRecord
+from bkuser.apps.tenant.models import TenantDepartment, TenantDepartmentIDRecord, TenantUser
 from bkuser.common.constants import PERMANENT_TIME
 from bkuser.common.hashers import make_password
 from bkuser.plugins.local.utils import gen_dept_code
@@ -183,9 +183,6 @@ class TenantDepartmentHandler:
     @staticmethod
     def get_ancestor_ids_map(tenant_id: str, data_source_department_ids: List[int]) -> Dict[int, List[int]]:
         """获取租户部门的祖先部门 ID 映射"""
-        if not data_source_department_ids:
-            return {}
-
         # 数据源部门 ID -> 祖先数据源部门 ID 列表
         ds_ancestor_map = DepartmentAncestorCache().batch_get(data_source_department_ids)
 
@@ -329,3 +326,50 @@ class TenantOrgPathHandler:
 
         descendant_ids = list(relation.get_descendants(include_self=True).values_list("department_id", flat=True))
         DepartmentAncestorCache().batch_delete(descendant_ids)
+
+    @staticmethod
+    def get_user_organization_ids_map(tenant_users: List[TenantUser]) -> Dict[str, List[int]]:
+        """获取用户所属组织 ID 映射
+
+        返回 {租户用户 ID: [组织 ID1, 组织 ID2, ...]}。部门 ID 是该用户所在租户下的 TenantDepartment.id，
+        为全部所属路径上的各级祖先与直属部门去重后的 ID 列表，无所属部门的用户返回空列表
+        """
+        # 数据源用户 ID -> 直属数据源部门 ID 列表
+        user_dept_ids: Dict[int, List[int]] = defaultdict(list)
+        for user_id, dept_id in DataSourceDepartmentUserRelation.objects.filter(
+            user_id__in=[user.data_source_user_id for user in tenant_users]
+        ).values_list("user_id", "department_id"):
+            user_dept_ids[user_id].append(dept_id)
+
+        # 同一批用户可能属于不用租户，部门 ID 必须按各自租户映射
+        users_by_tenant: Dict[str, List[TenantUser]] = defaultdict(list)
+        for user in tenant_users:
+            users_by_tenant[user.tenant_id].append(user)
+
+        result: Dict[str, List[int]] = {}
+        for tenant_id, users in users_by_tenant.items():
+            ds_dept_ids = list({dept_id for user in users for dept_id in user_dept_ids[user.data_source_user_id]})
+            # 直属数据源部门 ID -> 当前租户部门 ID
+            ds_to_tenant = dict(
+                TenantDepartment.objects.filter(
+                    tenant_id=tenant_id, data_source_department_id__in=ds_dept_ids
+                ).values_list("data_source_department_id", "id")
+            )
+            # 租户部门 ID -> 祖先租户部门 ID 列表（不含自身，顺序为根 -> 父）
+            ancestor_ids_map = TenantDepartmentHandler.get_ancestor_ids_map(tenant_id, ds_dept_ids)
+
+            dept_org_ids = {
+                ds_dept_id: [*ancestor_ids_map[tenant_dept_id], tenant_dept_id]
+                for ds_dept_id, tenant_dept_id in ds_to_tenant.items()
+            }
+
+            for user in users:
+                result[user.id] = list(
+                    dict.fromkeys(
+                        org_id
+                        for ds_dept_id in user_dept_ids[user.data_source_user_id]
+                        for org_id in dept_org_ids[ds_dept_id]
+                    )
+                )
+
+        return result

@@ -19,7 +19,7 @@ from typing import List
 
 import pytest
 from bkuser.apps.data_source.models import DataSourceDepartment
-from bkuser.apps.tenant.models import TenantDepartment
+from bkuser.apps.tenant.models import TenantDepartment, TenantUser
 from bkuser.biz.organization import TenantDepartmentHandler, TenantOrgPathHandler
 
 pytestmark = pytest.mark.django_db
@@ -90,3 +90,63 @@ class TestGetAncestorIdsMap:
         assert result[company.id] == []
         assert result[dept_a.id] == [company.id]
         assert result[center_aa.id] == [company.id, dept_a.id]
+
+
+def _tenant_user(tenant, username: str) -> TenantUser:
+    return TenantUser.objects.get(tenant=tenant, data_source_user__username=username)
+
+
+def _tenant_dept_id(tenant, code: str) -> int:
+    return TenantDepartment.objects.get(tenant=tenant, data_source_department__code=code).id
+
+
+@pytest.mark.usefixtures("_init_tenant_users_depts")
+class TestGetUserOrganizationIdsMap:
+    """租户用户所属组织 ID 映射测试"""
+
+    def test_empty_input(self):
+        assert TenantOrgPathHandler.get_user_organization_ids_map([]) == {}
+
+    def test_user_without_department(self, random_tenant):
+        freedom = _tenant_user(random_tenant, "freedom")
+
+        result = TenantOrgPathHandler.get_user_organization_ids_map([freedom])
+
+        assert result[freedom.id] == []
+
+    def test_root_department_user(self, random_tenant):
+        """直属根部门时，列表只有根部门自身"""
+        zhangsan = _tenant_user(random_tenant, "zhangsan")
+
+        result = TenantOrgPathHandler.get_user_organization_ids_map([zhangsan])
+
+        assert result[zhangsan.id] == [_tenant_dept_id(random_tenant, "company")]
+
+    def test_nested_department_includes_ancestors(self, random_tenant):
+        """小组 AAA 上的用户要带上从根到直属部门的整条链"""
+        liuqi = _tenant_user(random_tenant, "liuqi")
+
+        result = TenantOrgPathHandler.get_user_organization_ids_map([liuqi])
+
+        assert result[liuqi.id] == [
+            _tenant_dept_id(random_tenant, "company"),
+            _tenant_dept_id(random_tenant, "dept_a"),
+            _tenant_dept_id(random_tenant, "center_aa"),
+            _tenant_dept_id(random_tenant, "group_aaa"),
+        ]
+
+    def test_multi_org_user_dedup(self, random_tenant):
+        """
+        王五同时属于部门 A 和部门 B，共享的「公司」只出现一次
+
+        顺序按归属写入顺序：先部门 A 整条链，再补上部门 B
+        """
+        wangwu = _tenant_user(random_tenant, "wangwu")
+
+        result = TenantOrgPathHandler.get_user_organization_ids_map([wangwu])
+
+        assert result[wangwu.id] == [
+            _tenant_dept_id(random_tenant, "company"),
+            _tenant_dept_id(random_tenant, "dept_a"),
+            _tenant_dept_id(random_tenant, "dept_b"),
+        ]

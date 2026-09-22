@@ -219,6 +219,15 @@ class TestTenantDepartmentUserListApi:
         assert {d["bk_username"] for d in resp.data} == {lisi.id, wangwu.id}
         assert {d["login_name"] for d in resp.data} == {"lisi", "wangwu"}
         assert {d["display_name"] for d in resp.data} == {"lisi(李四)", "wangwu(王五)"}
+        org_ids = {d["login_name"]: d["organization_ids"] for d in resp.data}
+        assert org_ids["lisi"] == [
+            TenantDepartment.objects.get(tenant=random_tenant, data_source_department__code=code).id
+            for code in ("company", "dept_a", "center_aa")
+        ]
+        assert org_ids["wangwu"] == [
+            TenantDepartment.objects.get(tenant=random_tenant, data_source_department__code=code).id
+            for code in ("company", "dept_a", "dept_b")
+        ]
 
     @pytest.mark.usefixtures("_init_collaboration_users_depts")
     def test_with_collaboration_tenant(self, api_client, collaboration_tenant):
@@ -247,6 +256,7 @@ class TestTenantDepartmentUserListApi:
         assert resp.data[0]["bk_username"] == freedom.id
         assert resp.data[0]["login_name"] == "freedom"
         assert resp.data[0]["display_name"] == "freedom(自由人)"
+        assert resp.data[0]["organization_ids"] == []
 
     @pytest.mark.usefixtures("_init_tenant_users_depts")
     def test_with_invalid_owner_tenant_id(self, api_client, random_tenant):
