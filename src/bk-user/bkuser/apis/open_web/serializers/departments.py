@@ -52,7 +52,7 @@ class TenantDepartmentSearchOutputSLZ(serializers.Serializer):
         return self.context["has_user_map"][obj.data_source_department_id]
 
     def get_ancestor_ids(self, obj: TenantDepartment) -> List[int]:
-        return self.context["ancestor_ids_map"].get(obj.id)
+        return self.context["ancestor_ids_map"].get(obj.id, [])
 
 
 class TenantDepartmentChildrenListInputSLZ(serializers.Serializer):
@@ -82,7 +82,7 @@ class TenantDepartmentChildrenListOutputSLZ(serializers.Serializer):
         return self.context["has_user_map"][obj.data_source_department_id]
 
     def get_ancestor_ids(self, obj: TenantDepartment) -> List[int]:
-        return self.context["ancestor_ids_map"].get(obj.id)
+        return self.context["ancestor_ids_map"].get(obj.id, [])
 
 
 class TenantDepartmentUserListInputSLZ(serializers.Serializer):
@@ -129,4 +129,4 @@ class TenantDepartmentLookupOutputSLZ(serializers.Serializer):
         return self.context["org_path_map"][obj.data_source_department_id]
 
     def get_ancestor_ids(self, obj: TenantDepartment) -> List[int]:
-        return self.context["ancestor_ids_map"].get(obj.id)
+        return self.context["ancestor_ids_map"].get(obj.id, [])

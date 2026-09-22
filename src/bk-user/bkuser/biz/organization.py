@@ -359,7 +359,7 @@ class TenantOrgPathHandler:
             ancestor_ids_map = TenantDepartmentHandler.get_ancestor_ids_map(tenant_id, ds_dept_ids)
 
             dept_org_ids = {
-                ds_dept_id: [*ancestor_ids_map[tenant_dept_id], tenant_dept_id]
+                ds_dept_id: [*ancestor_ids_map.get(tenant_dept_id, []), tenant_dept_id]
                 for ds_dept_id, tenant_dept_id in ds_to_tenant.items()
             }
 
@@ -368,7 +368,7 @@ class TenantOrgPathHandler:
                     dict.fromkeys(
                         org_id
                         for ds_dept_id in user_dept_ids[user.data_source_user_id]
-                        for org_id in dept_org_ids[ds_dept_id]
+                        for org_id in dept_org_ids.get(ds_dept_id, [])
                     )
                 )
 
