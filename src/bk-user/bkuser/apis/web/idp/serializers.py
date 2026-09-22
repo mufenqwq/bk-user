@@ -205,17 +205,13 @@ class IdpCreateInputSLZ(serializers.Serializer):
         except NotImplementedError:
             raise ValidationError(_("认证源插件 {} 不存在").format(plugin_id))
 
-        if plugin_id == BuiltinIdpPluginEnum.LOCAL:
-            # 本地认证源无插件配置，data_source_ids 由生效范围（匹配关系）同步，不接受请求体入参
-            if attrs["plugin_config"]:
-                raise ValidationError(_("本地认证源无插件配置"))
-
-            attrs["plugin_config"] = cfg_cls()
-        else:
-            try:
-                attrs["plugin_config"] = cfg_cls(**attrs["plugin_config"])
-            except PDValidationError as e:
-                raise ValidationError(_("认证源插件配置不合法：{}").format(stringify_pydantic_error(e)))
+        try:
+            # 本地认证源无需插件配置，直接忽略
+            attrs["plugin_config"] = (
+                cfg_cls(**attrs["plugin_config"]) if plugin_id != BuiltinIdpPluginEnum.LOCAL else cfg_cls()
+            )
+        except PDValidationError as e:
+            raise ValidationError(_("认证源插件配置不合法：{}").format(stringify_pydantic_error(e)))
 
         _validate_data_source_match_rules(self.context["tenant_id"], plugin_id, attrs["data_source_match_rules"])
 
@@ -261,11 +257,8 @@ class IdpUpdateInputSLZ(serializers.Serializer):
     def validate_plugin_config(self, plugin_config: Dict[str, Any]) -> BasePluginConfig:
         cfg_cls = get_plugin_cfg_cls(self.context["plugin_id"])
 
-        # 本地认证源无插件配置，data_source_ids 由生效范围（匹配关系）同步，不接受请求体入参
+        # 本地认证源无需插件配置，直接忽略
         if self.context["plugin_id"] == BuiltinIdpPluginEnum.LOCAL:
-            if plugin_config:
-                raise ValidationError(_("本地认证源无插件配置"))
-
             return cfg_cls()
 
         # 将敏感信息填充回 plugin_config，一并进行校验
