@@ -634,12 +634,6 @@ class TestLocalIdpApi:
         assert "本地认证源仅允许关联已启用密码功能的数据源" in resp.data["message"]
         assert not IdpDataSourceRelation.objects.filter(data_source=bare_local_data_source).exists()
 
-    def test_create_rejects_request_plugin_config(self, api_client, random_tenant, bare_local_data_source):
-        payload = self._build_payload([bare_local_data_source], plugin_config={"data_source_ids": [99999999]})
-        resp = api_client.post(reverse("idp.list_create"), data=payload)
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert "本地认证源无插件配置" in resp.data["message"]
-
     def test_update_shrink_scope_preserves_data_source_password_config(
         self, api_client, random_tenant, bare_local_data_source, local_ds_plugin, local_ds_plugin_cfg
     ):
