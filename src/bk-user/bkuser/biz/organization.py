@@ -328,6 +328,23 @@ class TenantOrgPathHandler:
         DepartmentAncestorCache().batch_delete(descendant_ids)
 
     @staticmethod
+    def _get_dept_org_ids_map(tenant_id: str, ds_dept_ids: List[int]) -> Dict[int, List[int]]:
+        """构建数据源部门 ID -> 组织 ID 链映射，顺序为根 -> 自身"""
+        # 数据源部门 ID -> 当前租户部门 ID
+        ds_to_tenant = dict(
+            TenantDepartment.objects.filter(
+                tenant_id=tenant_id, data_source_department_id__in=ds_dept_ids
+            ).values_list("data_source_department_id", "id")
+        )
+        # 租户部门 ID -> 祖先租户部门 ID 列表（不含自身，顺序为根 -> 父）
+        ancestor_ids_map = TenantDepartmentHandler.get_ancestor_ids_map(tenant_id, ds_dept_ids)
+
+        return {
+            ds_dept_id: [*ancestor_ids_map.get(tenant_dept_id, []), tenant_dept_id]
+            for ds_dept_id, tenant_dept_id in ds_to_tenant.items()
+        }
+
+    @staticmethod
     def get_user_organization_ids_map(tenant_users: List[TenantUser]) -> Dict[str, List[int]]:
         """获取用户所属组织 ID 映射
 
@@ -349,19 +366,7 @@ class TenantOrgPathHandler:
         result: Dict[str, List[int]] = {}
         for tenant_id, users in users_by_tenant.items():
             ds_dept_ids = list({dept_id for user in users for dept_id in user_dept_ids[user.data_source_user_id]})
-            # 直属数据源部门 ID -> 当前租户部门 ID
-            ds_to_tenant = dict(
-                TenantDepartment.objects.filter(
-                    tenant_id=tenant_id, data_source_department_id__in=ds_dept_ids
-                ).values_list("data_source_department_id", "id")
-            )
-            # 租户部门 ID -> 祖先租户部门 ID 列表（不含自身，顺序为根 -> 父）
-            ancestor_ids_map = TenantDepartmentHandler.get_ancestor_ids_map(tenant_id, ds_dept_ids)
-
-            dept_org_ids = {
-                ds_dept_id: [*ancestor_ids_map.get(tenant_dept_id, []), tenant_dept_id]
-                for ds_dept_id, tenant_dept_id in ds_to_tenant.items()
-            }
+            dept_org_ids = TenantOrgPathHandler._get_dept_org_ids_map(tenant_id, ds_dept_ids)
 
             for user in users:
                 result[user.id] = list(
