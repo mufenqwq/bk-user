@@ -14,7 +14,7 @@
 #
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
-from typing import Any, Dict, List, Set
+from typing import List
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
@@ -29,7 +29,6 @@ from bkuser.apps.idp.models import Idp, IdpDataSourceRelation
 from bkuser.common.error_codes import error_codes
 from bkuser.idp_plugins.constants import BuiltinIdpPluginEnum
 from bkuser.idp_plugins.local.plugin import LocalIdpPluginConfig
-from bkuser.plugins.constants import DataSourcePluginEnum
 
 
 class IdpDataSourceRelationHandler:
@@ -139,85 +138,22 @@ class IdpDataSourceRelationHandler:
         return IdpDataSourceRelation.objects.filter(idp=idp).values_list("data_source__type", flat=True).first()
 
     @staticmethod
-    def _sync_local_plugin_config(idp: Idp) -> None:
-        """将 IDP 当前关联的数据源 ID 同步到本地登录插件配置中。
+    def _refresh_local_plugin_config(idp: Idp, data_source_ids: List[int] | None = None) -> None:
+        """刷新本地登录插件配置
 
         仅对本地登录源生效；非本地插件静默跳过。
         关系变更（增/删/刷新）后应始终调用此方法，以保持插件配置与关系表一致。
+        :param data_source_ids: 数据源 ID 列表，None 表示从关系表中获取
         """
         if idp.plugin_id != BuiltinIdpPluginEnum.LOCAL:
             return
 
-        data_source_ids: List[int] = []
-        if data_source_type := IdpDataSourceRelationHandler._get_relation_data_source_type(idp):
+        if data_source_ids is None:
             data_source_ids = list(
-                IdpDataSourceRelation.objects.filter(idp=idp, data_source__type=data_source_type).values_list(
-                    "data_source_id", flat=True
-                )
+                IdpDataSourceRelation.objects.filter(idp=idp).values_list("data_source_id", flat=True)
             )
 
         idp.set_plugin_cfg(LocalIdpPluginConfig(data_source_ids=data_source_ids))
-
-    @staticmethod
-    def _validate_real_data_sources(idp: Idp, data_source_ids: Set[int]) -> None:
-        """校验目标数据源均为当前租户下的实名数据源，且与 IDP 插件兼容。
-
-        联邦源兼容全部 REAL 源，本地账密只兼容 plugin_id=local 且已启用密码功能的源。
-        """
-        if not data_source_ids:
-            return
-
-        is_local_idp = idp.plugin_id == BuiltinIdpPluginEnum.LOCAL
-
-        queryset = DataSource.objects.filter(
-            id__in=data_source_ids, owner_tenant_id=idp.owner_tenant_id, type=DataSourceTypeEnum.REAL
-        )
-        if is_local_idp:
-            queryset = queryset.filter(plugin_id=DataSourcePluginEnum.LOCAL)
-
-        data_sources = list(queryset)
-        if data_source_ids - {data_source.id for data_source in data_sources}:
-            raise error_codes.DATA_SOURCE_NOT_EXIST.f(_("存在不兼容或不属于当前租户的实名数据源"))
-
-        # 本地认证源依赖数据源的密码功能，未启用密码的数据源不允许关联
-        if is_local_idp and any(not data_source.get_plugin_cfg().enable_password for data_source in data_sources):
-            raise error_codes.DATA_SOURCE_OPERATION_UNSUPPORTED.f(_("本地认证源仅允许关联已启用密码功能的数据源"))
-
-    @staticmethod
-    def _sync_real_relations(idp: Idp, target: Dict[int, List[Dict[str, Any]]]) -> None:
-        """按目标映射（data_source_id -> field_compare_rules）diff 刷新 REAL 关系记录。
-
-        target 为空表示清空 IDP 的全部 REAL 关系。
-        """
-        existing = {
-            relation.data_source_id: relation
-            for relation in IdpDataSourceRelation.objects.filter(idp=idp, data_source__type=DataSourceTypeEnum.REAL)
-        }
-
-        # 删：现有有，目标无
-        if to_delete := existing.keys() - target.keys():
-            IdpDataSourceRelation.objects.filter(idp=idp, data_source_id__in=to_delete).delete()
-
-        # 增：现有无，目标有
-        if to_create := target.keys() - existing.keys():
-            IdpDataSourceRelation.objects.bulk_create(
-                [
-                    IdpDataSourceRelation(
-                        idp=idp,
-                        data_source_id=data_source_id,
-                        idp_owner_tenant_id=idp.owner_tenant_id,
-                        field_compare_rules=target[data_source_id],
-                    )
-                    for data_source_id in to_create
-                ]
-            )
-
-        # 改：两边都有但规则不同
-        for data_source_id in existing.keys() & target.keys():
-            relation = existing[data_source_id]
-            if relation.field_compare_rules != target[data_source_id]:
-                relation.field_compare_rules = target[data_source_id]
-                relation.save(update_fields=["field_compare_rules", "updated_at"])
 
     @staticmethod
     @transaction.atomic()
@@ -231,16 +167,27 @@ class IdpDataSourceRelationHandler:
             rule.data_source_id: [compare_rule.model_dump() for compare_rule in rule.field_compare_rules]
             for rule in match_rules
         }
-
-        IdpDataSourceRelationHandler._validate_real_data_sources(idp, set(target.keys()))
-        IdpDataSourceRelationHandler._sync_real_relations(idp, target)
-        IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
+        IdpDataSourceRelation.objects.filter(idp=idp, data_source__type=DataSourceTypeEnum.REAL).delete()
+        IdpDataSourceRelation.objects.bulk_create(
+            [
+                IdpDataSourceRelation(
+                    idp=idp,
+                    data_source_id=data_source_id,
+                    field_compare_rules=field_compare_rules,
+                    idp_owner_tenant_id=idp.owner_tenant_id,
+                )
+                for data_source_id, field_compare_rules in target.items()
+            ]
+        )
+        IdpDataSourceRelationHandler._refresh_local_plugin_config(idp, list(target.keys()))
 
     @staticmethod
     @transaction.atomic()
     def remove_data_source_relations(data_source: DataSource) -> None:
         """删除指定数据源的全部认证源关系，并同步受影响的本地登录插件配置。
 
+        本地认证源的 data_source_ids 是关系的冗余，关系删除后必须写回。
+        因此不能依赖删除数据源时的 CASCADE, 需在删除数据源前显式调用。
         没有剩余关系的认证源会保留为孤儿态。
         """
         relation = (
@@ -251,7 +198,7 @@ class IdpDataSourceRelationHandler:
         IdpDataSourceRelation.objects.filter(data_source=data_source).delete()
 
         if relation:
-            IdpDataSourceRelationHandler._sync_local_plugin_config(relation.idp)
+            IdpDataSourceRelationHandler._refresh_local_plugin_config(relation.idp)
 
     @staticmethod
     @transaction.atomic()
@@ -274,4 +221,4 @@ class IdpDataSourceRelationHandler:
                 rule.model_dump() for rule in gen_data_source_match_rule_of_local(data_source.id).field_compare_rules
             ],
         )
-        IdpDataSourceRelationHandler._sync_local_plugin_config(idp)
+        IdpDataSourceRelationHandler._refresh_local_plugin_config(idp)

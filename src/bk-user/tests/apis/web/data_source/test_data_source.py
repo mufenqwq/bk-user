@@ -28,8 +28,6 @@ from bkuser.apps.data_source.models import (
 )
 from bkuser.apps.idp.constants import IdpStatus
 from bkuser.apps.idp.data_models import (
-    DataSourceMatchRule,
-    FieldCompareRule,
     gen_data_source_match_rule_of_local,
 )
 from bkuser.apps.idp.models import Idp, IdpDataSourceRelation
@@ -589,26 +587,6 @@ class TestIdpDataSourceRelationHandler:
         assert not IdpDataSourceRelation.objects.filter(idp=local_idp).exists()
         assert local_idp.plugin_config["data_source_ids"] == []
         assert Idp.objects.filter(id=local_idp.id).exists()
-
-    def test_set_real_relations_from_match_rules_rejects_invalid_data_source(self, wecom_idp):
-        """生效范围内存在不属于当前租户或不兼容的数据源时，抛出业务错误码
-
-        Note: 序列化器会先做一层校验，这里直接调用业务方法，保证底层不变量
-        与错误码不被绕过
-        """
-        with pytest.raises(APIError) as exc_info:
-            IdpDataSourceRelationHandler.set_real_relations_from_match_rules(
-                wecom_idp,
-                [
-                    DataSourceMatchRule(
-                        data_source_id=99999999,
-                        field_compare_rules=[FieldCompareRule(source_field="user_id", target_field="username")],
-                    )
-                ],
-            )
-
-        assert exc_info.value.code == error_codes.DATA_SOURCE_NOT_EXIST.code
-        assert "存在不兼容或不属于当前租户的实名数据源" in exc_info.value.message
 
     @pytest.fixture
     def builtin_management_data_source(self, data_source) -> DataSource:

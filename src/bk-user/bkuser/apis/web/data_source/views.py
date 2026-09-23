@@ -294,6 +294,8 @@ class DataSourceRetrieveUpdateDestroyApi(
         auditor.pre_record_data_before(data_source)
 
         with transaction.atomic():
+            # 删除数据源和认证源的关联关系
+            IdpDataSourceRelationHandler.remove_data_source_relations(data_source)
             # 删除数据源 & 关联资源数据
             DataSourceHandler.delete_data_source_and_related_resources(data_source)
 
