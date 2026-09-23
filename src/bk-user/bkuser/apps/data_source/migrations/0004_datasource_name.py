@@ -15,33 +15,17 @@
 # We undertake not to change the open source license (MIT license) applicable
 # to the current version of the project delivered to anyone in the future.
 
-from collections import defaultdict
-
 from django.db import migrations, models
 
-# 非实名数据源类型的默认名称映射
-TYPE_DEFAULT_NAME = {"builtin_management": "内置管理数据源", "virtual": "虚拟用户数据源"}
+from bkuser.apps.data_source.name import gen_data_source_name
 
 
-def forward_func(apps, schema_editor):
-    """为已有数据源回填 name 字段，同租户冲突时追加序号"""
+def forwards_func(apps, schema_editor):
+    """为已有数据源回填名称"""
     DataSource = apps.get_model("data_source", "DataSource")
-    by_tenant = defaultdict(list)
-    for ds in DataSource.objects.select_related("plugin").order_by("id"):
-        by_tenant[ds.owner_tenant_id].append(ds)
-
-    for _, data_sources in by_tenant.items():
-        used = set()
-        for ds in data_sources:
-            base = TYPE_DEFAULT_NAME.get(ds.type) or ds.plugin.name
-            name, idx = base, 1
-            while name in used:
-                idx += 1
-                name = f"{base} {idx}"
-            used.add(name)
-            ds.name = name
-            # 数据源的数量不会很多，这里不使用 bulk_update
-            ds.save(update_fields=["name"])
+    for data_source in DataSource.objects.select_related("plugin"):
+        data_source.name = gen_data_source_name(data_source.type, data_source.plugin.name)
+        data_source.save(update_fields=["name"])
 
 
 class Migration(migrations.Migration):
@@ -54,7 +38,7 @@ class Migration(migrations.Migration):
             field=models.CharField(default="", max_length=64, verbose_name="数据源名称"),
             preserve_default=False,
         ),
-        migrations.RunPython(forward_func, migrations.RunPython.noop),
+        migrations.RunPython(forwards_func, migrations.RunPython.noop),
         migrations.AlterUniqueTogether(
             name="datasource",
             unique_together={("name", "owner_tenant_id")},
