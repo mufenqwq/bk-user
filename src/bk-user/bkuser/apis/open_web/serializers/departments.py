@@ -107,7 +107,7 @@ class TenantDepartmentUserListOutputSLZ(serializers.Serializer):
     def get_display_name(self, obj: TenantUser) -> str:
         return self.context["display_name_map"][obj.id]
 
-    def get_organization_ids(self, obj: TenantUser) -> List[str]:
+    def get_organization_ids(self, obj: TenantUser) -> List[int]:
         return self.context["org_ids_map"][obj.id]
 
 

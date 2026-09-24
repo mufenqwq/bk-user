@@ -90,7 +90,7 @@ class TenantUserSearchOutputSLZ(serializers.Serializer):
     def get_organization_paths(self, obj: TenantUser) -> List[str]:
         return self.context["org_path_map"].get(obj.data_source_user_id, [])
 
-    def get_organization_ids(self, obj: TenantUser) -> List[str]:
+    def get_organization_ids(self, obj: TenantUser) -> List[int]:
         return self.context["org_ids_map"][obj.id]
 
     def to_representation(self, instance):
@@ -157,7 +157,7 @@ class TenantUserLookupOutputSLZ(serializers.Serializer):
     def get_organization_paths(self, obj: TenantUser) -> List[str]:
         return self.context["org_path_map"].get(obj.data_source_user_id, [])
 
-    def get_organization_ids(self, obj: TenantUser) -> List[str]:
+    def get_organization_ids(self, obj: TenantUser) -> List[int]:
         return self.context["org_ids_map"][obj.id]
 
     def to_representation(self, instance):
