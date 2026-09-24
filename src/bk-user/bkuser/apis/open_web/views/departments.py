@@ -226,7 +226,7 @@ class TenantDepartmentUserListApi(OpenWebApiCommonMixin, generics.ListAPIView):
             many=True,
             context={
                 "display_name_map": display_name_map,
-                "org_ids_map": TenantOrgPathHandler.get_user_organization_ids_map(tenant_users),
+                "org_ids_map": TenantOrgPathHandler.get_user_organization_ids_map(self.tenant_id, tenant_users),
             },
         )
         return self.get_paginated_response(slz.data)

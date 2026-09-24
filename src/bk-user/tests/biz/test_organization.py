@@ -104,13 +104,13 @@ def _tenant_dept_id(tenant, code: str) -> int:
 class TestGetUserOrganizationIdsMap:
     """租户用户所属组织 ID 映射测试"""
 
-    def test_empty_input(self):
-        assert TenantOrgPathHandler.get_user_organization_ids_map([]) == {}
+    def test_empty_input(self, random_tenant):
+        assert TenantOrgPathHandler.get_user_organization_ids_map(random_tenant.id, []) == {}
 
     def test_user_without_department(self, random_tenant):
         freedom = _tenant_user(random_tenant, "freedom")
 
-        result = TenantOrgPathHandler.get_user_organization_ids_map([freedom])
+        result = TenantOrgPathHandler.get_user_organization_ids_map(random_tenant.id, [freedom])
 
         assert result[freedom.id] == []
 
@@ -118,7 +118,7 @@ class TestGetUserOrganizationIdsMap:
         """直属根部门时，列表只有根部门自身"""
         zhangsan = _tenant_user(random_tenant, "zhangsan")
 
-        result = TenantOrgPathHandler.get_user_organization_ids_map([zhangsan])
+        result = TenantOrgPathHandler.get_user_organization_ids_map(random_tenant.id, [zhangsan])
 
         assert result[zhangsan.id] == [_tenant_dept_id(random_tenant, "company")]
 
@@ -126,7 +126,7 @@ class TestGetUserOrganizationIdsMap:
         """小组 AAA 上的用户要带上从根到直属部门的整条链"""
         liuqi = _tenant_user(random_tenant, "liuqi")
 
-        result = TenantOrgPathHandler.get_user_organization_ids_map([liuqi])
+        result = TenantOrgPathHandler.get_user_organization_ids_map(random_tenant.id, [liuqi])
 
         assert result[liuqi.id] == [
             _tenant_dept_id(random_tenant, "company"),
@@ -143,7 +143,7 @@ class TestGetUserOrganizationIdsMap:
         """
         wangwu = _tenant_user(random_tenant, "wangwu")
 
-        result = TenantOrgPathHandler.get_user_organization_ids_map([wangwu])
+        result = TenantOrgPathHandler.get_user_organization_ids_map(random_tenant.id, [wangwu])
 
         assert result[wangwu.id] == [
             _tenant_dept_id(random_tenant, "company"),
