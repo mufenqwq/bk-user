@@ -95,7 +95,7 @@ class TenantUserSearchOutputSLZ(serializers.Serializer):
         return self.context["org_path_map"].get(obj.data_source_user_id, [])
 
 
-class TenantUserListInputSLZ(serializers.Serializer):
+class SourceTenantUserListInputSLZ(serializers.Serializer):
     id = serializers.CharField(help_text="用户 ID", required=False)
     username = serializers.CharField(help_text="用户名", required=False)
     full_name = serializers.CharField(help_text="用户姓名", required=False)
@@ -123,7 +123,7 @@ class TenantUserListInputSLZ(serializers.Serializer):
         return attrs
 
 
-class TenantUserListByDataSourceInputSLZ(TenantUserListInputSLZ):
+class TenantUserListInputSLZ(SourceTenantUserListInputSLZ):
     recursive = serializers.BooleanField(help_text="包含子部门的人员", default=False)
     department_id = serializers.IntegerField(help_text="部门 ID（为 0 表示不指定部门）", default=0)
 

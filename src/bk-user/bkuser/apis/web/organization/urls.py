@@ -42,7 +42,7 @@ urlpatterns = [
     # 指定租户在当前租户下的用户列表
     path(
         "tenants/<str:tenant_id>/users/",
-        views.TenantUserListApi.as_view(),
+        views.SourceTenantUserListApi.as_view(),
         name="organization.tenant_user.list",
     ),
     # 搜索租户部门（含协同数据）
