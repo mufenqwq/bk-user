@@ -252,32 +252,33 @@ class TenantOrgPathHandler:
 
     @staticmethod
     def get_tenant_user_dept_names_map(tenant_id: str, tenant_users: List[TenantUser]) -> Dict[str, List[str]]:
-        """获取租户用户 ID -> 所属部门名称列表（部门名取自指定租户下的租户部门）"""
-        relations = list(
-            DataSourceDepartmentUserRelation.objects.filter(
-                user_id__in=[tenant_user.data_source_user_id for tenant_user in tenant_users]
-            )
-        )
+        """获取一批租户用户的部门信息
 
+        :return: {租户用户 ID: [部门名称]}
+        """
+        data_source_user_ids = [u.data_source_user_id for u in tenant_users]
+        relations = DataSourceDepartmentUserRelation.objects.filter(user_id__in=data_source_user_ids)
+
+        data_source_dept_ids = relations.values_list("department_id", flat=True)
         # 数据源部门 ID -> 部门名称
-        dept_id_name_map = {
-            tenant_dept.data_source_department_id: tenant_dept.data_source_department.name
-            for tenant_dept in TenantDepartment.objects.filter(
-                tenant_id=tenant_id,
-                data_source_department_id__in={rel.department_id for rel in relations},
+        data_source_dept_id_name_map = {
+            dept.data_source_department_id: dept.data_source_department.name
+            for dept in TenantDepartment.objects.filter(
+                tenant_id=tenant_id, data_source_department_id__in=data_source_dept_ids
             ).select_related("data_source_department")
         }
 
         # 数据源用户 ID -> 部门名称列表
-        data_source_user_dept_names_map = defaultdict(list)
+        data_source_user_dept_ids_map = defaultdict(list)
         for rel in relations:
-            if name := dept_id_name_map.get(rel.department_id):
-                data_source_user_dept_names_map[rel.user_id].append(name)
+            data_source_user_dept_ids_map[rel.user_id].append(rel.department_id)
 
-        # 出口按租户用户 ID 组织（数据源用户 ID -> 租户用户 ID 的映射收敛在此）
         return {
-            tenant_user.id: data_source_user_dept_names_map.get(tenant_user.data_source_user_id, [])
-            for tenant_user in tenant_users
+            user.id: [
+                data_source_dept_id_name_map[dept_id]
+                for dept_id in data_source_user_dept_ids_map.get(user.data_source_user_id, [])
+            ]
+            for user in tenant_users
         }
 
     @staticmethod

@@ -75,7 +75,7 @@ urlpatterns = [
         views.TenantUserStatusBatchUpdateApi.as_view(),
         name="organization.tenant_user.status.batch_update",
     ),
-    # ====================  数据源维度  ====================
+    # =================================  数据源维度  =================================
     # 租户部门列表 / 创建租户部门
     path(
         "tenants/data-sources/<int:data_source_id>/departments/",
